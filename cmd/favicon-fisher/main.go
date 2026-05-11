@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/chius-me/favicon-fisher/internal/fetcher"
@@ -16,6 +18,8 @@ import (
 var (
 	outputDir string
 	jsonOnly  bool
+	fetchAll  bool
+	proxyURL  string
 )
 
 func main() {
@@ -41,7 +45,7 @@ func main() {
 			} else {
 				url = args[0]
 			}
-			return runFetch(cmd.Context(), url, outputDir, jsonOnly)
+			return runFetch(cmd.Context(), url, outputDir, jsonOnly, fetchAll, proxyURL)
 		},
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -49,6 +53,8 @@ func main() {
 
 	rootCmd.Flags().StringVarP(&outputDir, "out", "o", "./out", "output directory to save the favicon")
 	rootCmd.Flags().BoolVar(&jsonOnly, "json", false, "output JSON metadata only (useful for scripts)")
+	rootCmd.Flags().BoolVar(&fetchAll, "all", false, "download all discovered favicon candidates, not just the best one")
+	rootCmd.Flags().StringVar(&proxyURL, "proxy", "", "HTTP proxy URL (e.g. http://127.0.0.1:8080). Also respects HTTP_PROXY/HTTPS_PROXY env vars")
 
 	// Disable default completion command
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
@@ -63,14 +69,27 @@ func main() {
 	}
 }
 
-func runFetch(ctx context.Context, rawURL string, outputDir string, jsonOnly bool) error {
+func runFetch(ctx context.Context, rawURL string, outputDir string, jsonOnly bool, fetchAll bool, proxyURL string) error {
 	var spinner *pterm.SpinnerPrinter
 	if !jsonOnly {
 		spinner, _ = pterm.DefaultSpinner.Start(fmt.Sprintf("Fishing favicon from %s ...", rawURL))
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	result, err := fetcher.New(client).Fetch(ctx, rawURL, outputDir)
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if proxyURL != "" {
+		pURL, err := url.Parse(proxyURL)
+		if err != nil {
+			return fmt.Errorf("invalid proxy URL: %w", err)
+		}
+		transport.Proxy = http.ProxyURL(pURL)
+	}
+
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: transport,
+	}
+	
+	result, err := fetcher.New(client).Fetch(ctx, rawURL, outputDir, fetchAll)
 	
 	if err != nil {
 		if spinner != nil {
@@ -92,14 +111,28 @@ func runFetch(ctx context.Context, rawURL string, outputDir string, jsonOnly boo
 	}
 
 	fmt.Println()
-	panel := pterm.DefaultBox.WithTitle(pterm.LightGreen("Success")).WithTitleTopLeft().Sprint(
-		pterm.Sprintf("%s %s\n%s %s\n%s %s",
-			pterm.Cyan("Website: "), result.PageURL,
-			pterm.Cyan("Icon URL:"), result.IconURL,
-			pterm.Cyan("Saved to:"), pterm.LightMagenta(result.OutputPath),
-		),
-	)
-	pterm.Print(panel)
+	if len(result.AllIcons) > 0 {
+		var content strings.Builder
+		content.WriteString(pterm.Sprintf("%s %s\n\n", pterm.Cyan("Website: "), result.PageURL))
+		for i, icon := range result.AllIcons {
+			content.WriteString(pterm.Sprintf("%s %s\n", pterm.Cyan(fmt.Sprintf("[%d] Icon URL:", i+1)), icon.IconURL))
+			content.WriteString(pterm.Sprintf("%s %s\n", pterm.Cyan(fmt.Sprintf("[%d] Saved to:", i+1)), pterm.LightMagenta(icon.OutputPath)))
+			if i < len(result.AllIcons)-1 {
+				content.WriteString("\n")
+			}
+		}
+		panel := pterm.DefaultBox.WithTitle(pterm.LightGreen(fmt.Sprintf("Success (Downloaded %d icons)", len(result.AllIcons)))).WithTitleTopLeft().Sprint(content.String())
+		pterm.Print(panel)
+	} else {
+		panel := pterm.DefaultBox.WithTitle(pterm.LightGreen("Success")).WithTitleTopLeft().Sprint(
+			pterm.Sprintf("%s %s\n%s %s\n%s %s",
+				pterm.Cyan("Website: "), result.PageURL,
+				pterm.Cyan("Icon URL:"), result.IconURL,
+				pterm.Cyan("Saved to:"), pterm.LightMagenta(result.OutputPath),
+			),
+		)
+		pterm.Print(panel)
+	}
 	
 	return nil
 }

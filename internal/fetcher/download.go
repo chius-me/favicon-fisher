@@ -13,56 +13,67 @@ import (
 	"strings"
 )
 
-func DownloadIcon(ctx context.Context, client *http.Client, iconURL string, outputDir string) (Result, error) {
+func DownloadIcon(ctx context.Context, client *http.Client, iconURL string, outputDir string, sizeHint string, relHint string) (IconResult, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, iconURL, nil)
 	if err != nil {
-		return Result{}, fmt.Errorf("build icon request: %w", err)
+		return IconResult{}, fmt.Errorf("build icon request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return Result{}, fmt.Errorf("download icon: %w", err)
+		return IconResult{}, fmt.Errorf("download icon: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Result{}, fmt.Errorf("download icon failed: status %d", resp.StatusCode)
+		return IconResult{}, fmt.Errorf("download icon failed: status %d", resp.StatusCode)
 	}
 
 	parsedURL, err := url.Parse(iconURL)
 	if err != nil {
-		return Result{}, fmt.Errorf("parse icon URL: %w", err)
+		return IconResult{}, fmt.Errorf("parse icon URL: %w", err)
 	}
 
 	ext := inferExtension(parsedURL.Path, resp.Header.Get("Content-Type"))
-	filename := safeFilename(parsedURL.Hostname(), ext)
+	
+	// Create suffix based on size and rel to avoid conflicts when downloading all
+	suffix := ""
+	if sizeHint != "" {
+		suffix = "-" + strings.ReplaceAll(sizeHint, " ", "-")
+	} else if relHint != "" && relHint != "icon" && relHint != "shortcut icon" {
+		suffix = "-" + strings.ReplaceAll(relHint, " ", "-")
+	}
+	
+	filename := safeFilename(parsedURL.Hostname()+suffix, ext)
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		return Result{}, fmt.Errorf("create output dir: %w", err)
+		return IconResult{}, fmt.Errorf("create output dir: %w", err)
 	}
 
 	outputPath := filepath.Join(outputDir, filename)
 	file, err := os.Create(outputPath)
 	if err != nil {
-		return Result{}, fmt.Errorf("create output file: %w", err)
+		return IconResult{}, fmt.Errorf("create output file: %w", err)
 	}
 	defer file.Close()
 
 	written, err := io.Copy(file, resp.Body)
 	if err != nil {
-		return Result{}, fmt.Errorf("write output file: %w", err)
+		return IconResult{}, fmt.Errorf("write output file: %w", err)
 	}
 
-	return Result{
+	return IconResult{
 		IconURL:     iconURL,
 		OutputPath:  outputPath,
 		ContentType: resp.Header.Get("Content-Type"),
 		Bytes:       written,
 		StatusCode:  resp.StatusCode,
 		Filename:    filename,
+		SourceRel:   relHint,
+		Sizes:       sizeHint,
 	}, nil
 }
 
