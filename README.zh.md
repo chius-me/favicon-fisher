@@ -29,21 +29,21 @@
 
 ## 快速开始
 
-你可以从 [Releases 页面](https://github.com/chius-me/favicon-fisher/releases) 下载最新版本，或者从源码构建：
+从 [Releases 页面](https://github.com/chius-me/favicon-fisher/releases) 下载最新版本，或者从源码编译：
 
 ```bash
-go build -o favicon-fisher ./cmd/favicon-fisher
+go build -o fvf ./cmd/fvf
 ```
 
-## 使用方式
+## 使用方法
 
-基础运行，将结果保存到 `tmp` 目录：
+基本运行，保存到 `tmp` 目录：
 
 ```bash
-./favicon-fisher --out tmp https://github.com
+./fvf --out tmp https://github.com
 ```
 
-输出：
+输出:
 
 ```text
 Saved favicon
@@ -52,10 +52,10 @@ Saved favicon
   file: tmp/github.githubassets.com.svg
 ```
 
-JSON 模式：
+JSON 模式:
 
 ```bash
-./favicon-fisher --json --out tmp https://go.dev
+./fvf --json --out tmp https://go.dev
 ```
 
 输出：
@@ -88,7 +88,7 @@ go test ./...
 
 ## 项目结构
 
-- `cmd/favicon-fisher/`：CLI 主入口点。
+- `cmd/fvf/`: CLI 主入口。
 - `internal/fetcher/`：包含发现、候选评分与下载的核心业务逻辑。
 - `docs/plans/`：历史实现计划与记录。
 

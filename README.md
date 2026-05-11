@@ -32,7 +32,7 @@ For a single URL or domain, it automatically resolves `https://`, fetches the HT
 Download the latest release from the [Releases page](https://github.com/chius-me/favicon-fisher/releases) or build it from source:
 
 ```bash
-go build -o favicon-fisher ./cmd/favicon-fisher
+go build -o fvf ./cmd/fvf
 ```
 
 ## Usage
@@ -40,7 +40,7 @@ go build -o favicon-fisher ./cmd/favicon-fisher
 Basic run, saving to a `tmp` directory:
 
 ```bash
-./favicon-fisher --out tmp https://github.com
+./fvf --out tmp https://github.com
 ```
 
 Output:
@@ -55,7 +55,7 @@ Saved favicon
 JSON mode:
 
 ```bash
-./favicon-fisher --json --out tmp https://go.dev
+./fvf --json --out tmp https://go.dev
 ```
 
 Output:
@@ -88,7 +88,7 @@ go test ./...
 
 ## Project Structure
 
-- `cmd/favicon-fisher/`: The main CLI entrypoint.
+- `cmd/fvf/`: The main CLI entrypoint.
 - `internal/fetcher/`: Core logic for discovery, candidate scoring, and downloading.
 - `docs/plans/`: Historical implementation plans.
 

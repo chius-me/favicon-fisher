@@ -24,9 +24,9 @@ var (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "favicon-fisher [url]",
+		Use:   "fvf [url]",
 		Short: "A fast and smart favicon fetcher CLI",
-		Long:  `favicon-fisher helps you easily extract and download the best favicon from any website.`,
+		Long:  `favicon-fisher (fvf) helps you easily extract and download the best favicon from any website.`,
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var url string
@@ -35,7 +35,7 @@ func main() {
 				if jsonOnly {
 					return fmt.Errorf("URL is required when using --json")
 				}
-				pterm.DefaultBasicText.Println(pterm.LightCyan("Welcome to favicon-fisher! 🎣"))
+				pterm.DefaultBasicText.Println(pterm.LightCyan("Welcome to favicon-fisher (fvf)! 🎣"))
 				pterm.DefaultBasicText.Println("Please enter the website URL you want to fetch the favicon from:")
 				fmt.Print("URL > ")
 				fmt.Scanln(&url)

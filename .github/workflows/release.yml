@@ -72,14 +72,14 @@ jobs:
           set -euo pipefail
 
           TAG="${GITHUB_REF_NAME}"
-          ARTIFACT_BASENAME="favicon-fisher_${TAG}_${GOOS}_${GOARCH}"
-          BINARY_NAME="favicon-fisher"
+          ARTIFACT_BASENAME="fvf_${TAG}_${GOOS}_${GOARCH}"
+          BINARY_NAME="fvf"
           if [ "$GOOS" = "windows" ]; then
             BINARY_NAME="${BINARY_NAME}.exe"
           fi
 
           mkdir -p dist
-          go build -trimpath -ldflags="-s -w" -o "dist/${BINARY_NAME}" ./cmd/favicon-fisher
+          go build -trimpath -ldflags="-s -w" -o "dist/${BINARY_NAME}" ./cmd/fvf
 
           PACKAGE_ROOT="${RUNNER_TEMP}/${ARTIFACT_BASENAME}"
           rm -rf "${PACKAGE_ROOT}"
