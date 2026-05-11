@@ -99,7 +99,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fe
 		}
 		
 	} else {
-		iconRes, err := DownloadIcon(ctx, f.Client, best.URL, outputDir, "", "")
+		iconRes, err := DownloadIcon(ctx, f.Client, best.URL, outputDir, best.Sizes, best.Rel)
 		if err != nil {
 			return Result{}, err
 		}

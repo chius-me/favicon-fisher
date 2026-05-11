@@ -17,7 +17,7 @@ func TestDownloadIconSavesPNGAndReturnsMetadata(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := DownloadIcon(context.Background(), server.Client(), server.URL+"/favicon.png", t.TempDir())
+	result, err := DownloadIcon(context.Background(), server.Client(), server.URL+"/favicon.png", t.TempDir(), "", "")
 	if err != nil {
 		t.Fatalf("DownloadIcon returned error: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestDownloadIconInfersICOExtensionFromContentType(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := DownloadIcon(context.Background(), server.Client(), server.URL+"/asset", t.TempDir())
+	result, err := DownloadIcon(context.Background(), server.Client(), server.URL+"/asset", t.TempDir(), "", "")
 	if err != nil {
 		t.Fatalf("DownloadIcon returned error: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestDownloadIconReturnsErrorOnNonSuccessStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := DownloadIcon(context.Background(), server.Client(), server.URL+"/missing.ico", t.TempDir())
+	_, err := DownloadIcon(context.Background(), server.Client(), server.URL+"/missing.ico", t.TempDir(), "", "")
 	if err == nil {
 		t.Fatal("expected error for non-success status")
 	}
@@ -87,7 +87,7 @@ func TestFetcherFetchReturnsDiscoveredIconMetadata(t *testing.T) {
 	defer server.Close()
 
 	fetcher := New(server.Client())
-	result, err := fetcher.Fetch(context.Background(), server.URL, t.TempDir())
+	result, err := fetcher.Fetch(context.Background(), server.URL, t.TempDir(), false)
 	if err != nil {
 		t.Fatalf("Fetch returned error: %v", err)
 	}
