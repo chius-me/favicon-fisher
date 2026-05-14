@@ -74,17 +74,21 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           ARTIFACT_BASENAME="fvf_${TAG}_${GOOS}_${GOARCH}"
           BINARY_NAME="fvf"
+          WEB_BINARY_NAME="fvf-web"
           if [ "$GOOS" = "windows" ]; then
             BINARY_NAME="${BINARY_NAME}.exe"
+            WEB_BINARY_NAME="${WEB_BINARY_NAME}.exe"
           fi
 
           mkdir -p dist
           go build -trimpath -ldflags="-s -w" -o "dist/${BINARY_NAME}" ./cmd/fvf
+          go build -trimpath -ldflags="-s -w" -o "dist/${WEB_BINARY_NAME}" ./cmd/fvf-web
 
           PACKAGE_ROOT="${RUNNER_TEMP}/${ARTIFACT_BASENAME}"
           rm -rf "${PACKAGE_ROOT}"
           mkdir -p "${PACKAGE_ROOT}"
           cp "dist/${BINARY_NAME}" "${PACKAGE_ROOT}/"
+          cp "dist/${WEB_BINARY_NAME}" "${PACKAGE_ROOT}/"
           cp README.md LICENSE "${PACKAGE_ROOT}/"
 
           if [ "$ARCHIVE" = "zip" ]; then

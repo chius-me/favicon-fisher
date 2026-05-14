@@ -71,6 +71,44 @@ func TestDownloadIconReturnsErrorOnNonSuccessStatus(t *testing.T) {
 	}
 }
 
+func TestFetcherPreviewReturnsBestCandidateAndAllCandidates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(`<html><head><link rel="icon" href="/favicon.png"><link rel="apple-touch-icon" href="/apple.png"></head></html>`))
+		case "/favicon.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte("png-bytes"))
+		case "/apple.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte("apple-bytes"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	fetcher := New(server.Client())
+	preview, err := fetcher.Preview(context.Background(), server.URL)
+	if err != nil {
+		t.Fatalf("Preview returned error: %v", err)
+	}
+
+	if preview.InputURL != server.URL {
+		t.Fatalf("expected input URL %q, got %q", server.URL, preview.InputURL)
+	}
+	if preview.PageURL != server.URL {
+		t.Fatalf("expected page URL %q, got %q", server.URL, preview.PageURL)
+	}
+	if preview.Best.URL != server.URL+"/favicon.png" {
+		t.Fatalf("expected best URL %q, got %q", server.URL+"/favicon.png", preview.Best.URL)
+	}
+	if len(preview.Candidates) != 3 {
+		t.Fatalf("expected 3 candidates including fallback, got %d", len(preview.Candidates))
+	}
+}
+
 func TestFetcherFetchReturnsDiscoveredIconMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

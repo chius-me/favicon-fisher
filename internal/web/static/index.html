@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>favicon-fisher v1.0.1</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="panel">
+      <h1>favicon-fisher</h1>
+      <p class="subtitle">Preview a website icon and download it in another format.</p>
+
+      <form id="preview-form" class="stack">
+        <label for="url">Website URL</label>
+        <div class="row">
+          <input id="url" name="url" type="text" placeholder="https://example.com" required>
+          <button type="submit">Preview</button>
+        </div>
+      </form>
+
+      <p id="status" class="status"></p>
+
+      <section id="results" class="results hidden">
+        <div class="preview-card">
+          <h2>Preview</h2>
+          <div class="preview-box">
+            <img id="hero-icon" alt="Selected favicon preview">
+          </div>
+          <div class="meta">
+            <div><strong>Page:</strong> <span id="page-url"></span></div>
+            <div><strong>Selected:</strong> <span id="selected-url"></span></div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <h2>Icon candidates</h2>
+          <div id="icon-list" class="icon-list"></div>
+
+          <label for="format">Download format</label>
+          <select id="format"></select>
+
+          <button id="download-btn" type="button">Download</button>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

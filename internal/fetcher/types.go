@@ -22,6 +22,13 @@ type Result struct {
 	AllIcons     []IconResult `json:"all_icons,omitempty"`
 }
 
+type PreviewResult struct {
+	InputURL   string
+	PageURL    string
+	Best       Candidate
+	Candidates []Candidate
+}
+
 type IconResult struct {
 	IconURL     string `json:"icon_url"`
 	OutputPath  string `json:"output_path"`

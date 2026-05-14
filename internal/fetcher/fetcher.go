@@ -18,45 +18,22 @@ func New(client *http.Client) *Fetcher {
 }
 
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fetchAll bool) (Result, error) {
-	normalized, err := NormalizeInputURL(rawURL)
+	preview, err := f.Preview(ctx, rawURL)
 	if err != nil {
 		return Result{}, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, normalized, nil)
-	if err != nil {
-		return Result{}, fmt.Errorf("build page request: %w", err)
-	}
-
-	resp, err := f.Client.Do(req)
-	if err != nil {
-		return Result{}, fmt.Errorf("fetch page: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Result{}, fmt.Errorf("fetch page failed: status %d", resp.StatusCode)
-	}
-
-	candidates, err := DiscoverCandidates(resp.Request.URL.String(), resp.Body)
-	if err != nil {
-		return Result{}, err
-	}
-
-	best, err := BestCandidate(candidates)
-	if err != nil {
-		return Result{}, err
-	}
-
+	best := preview.Best
+	candidates := preview.Candidates
 	result := Result{
 		InputURL: rawURL,
-		PageURL:  resp.Request.URL.String(),
+		PageURL:  preview.PageURL,
 	}
 
 	if fetchAll {
 		var allIcons []IconResult
 		downloadedURLs := make(map[string]bool)
-		
+
 		for _, candidate := range candidates {
 			if downloadedURLs[candidate.URL] {
 				continue
@@ -65,8 +42,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fe
 			if err == nil {
 				allIcons = append(allIcons, iconRes)
 				downloadedURLs[candidate.URL] = true
-				
-				// Set the best one as the primary icon in Result
+
 				if candidate.URL == best.URL {
 					result.IconURL = iconRes.IconURL
 					result.OutputPath = iconRes.OutputPath
@@ -79,13 +55,12 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fe
 				}
 			}
 		}
-		
+
 		if len(allIcons) == 0 {
 			return Result{}, fmt.Errorf("failed to download any icons")
 		}
 		result.AllIcons = allIcons
-		
-		// If best failed but others succeeded, fallback to the first successful one
+
 		if result.IconURL == "" && len(allIcons) > 0 {
 			first := allIcons[0]
 			result.IconURL = first.IconURL
@@ -97,7 +72,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fe
 			result.SourceRel = first.SourceRel
 			result.FallbackUsed = first.SourceRel == "fallback"
 		}
-		
+
 	} else {
 		iconRes, err := DownloadIcon(ctx, f.Client, best.URL, outputDir, best.Sizes, best.Rel)
 		if err != nil {
@@ -115,4 +90,43 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fe
 	}
 
 	return result, nil
+}
+
+func (f *Fetcher) Preview(ctx context.Context, rawURL string) (PreviewResult, error) {
+	normalized, err := NormalizeInputURL(rawURL)
+	if err != nil {
+		return PreviewResult{}, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, normalized, nil)
+	if err != nil {
+		return PreviewResult{}, fmt.Errorf("build page request: %w", err)
+	}
+
+	resp, err := f.Client.Do(req)
+	if err != nil {
+		return PreviewResult{}, fmt.Errorf("fetch page: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return PreviewResult{}, fmt.Errorf("fetch page failed: status %d", resp.StatusCode)
+	}
+
+	candidates, err := DiscoverCandidates(resp.Request.URL.String(), resp.Body)
+	if err != nil {
+		return PreviewResult{}, err
+	}
+
+	best, err := BestCandidate(candidates)
+	if err != nil {
+		return PreviewResult{}, err
+	}
+
+	return PreviewResult{
+		InputURL:   rawURL,
+		PageURL:    resp.Request.URL.String(),
+		Best:       best,
+		Candidates: candidates,
+	}, nil
 }

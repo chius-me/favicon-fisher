@@ -5,7 +5,7 @@
 <h1 align="center">favicon-fisher</h1>
 
 <p align="center">
-  A small Go CLI that discovers a website's favicon, downloads the best candidate it can find, and writes JSON-friendly metadata about the result.
+  A small Go toolset that discovers a website's favicon, previews candidates in a Web UI, and downloads the chosen icon in a supported format.
 </p>
 
 <p align="center">
@@ -17,39 +17,98 @@
 
 ## Overview
 
-For a single URL or domain, it automatically resolves `https://`, fetches the HTML, and parses `<link rel="icon">`, `shortcut icon`, `apple-touch-icon`, and fallback `/favicon.ico` paths. It then scores the candidates, downloads the best one, and prints either a human-readable summary or structured JSON for programmatic use.
+`favicon-fisher` now ships two entrypoints:
 
-## Features
+- `fvf`: the existing CLI for favicon discovery and download
+- `fvf-web`: a lightweight Web UI/API for previewing discovered icons and downloading them as another format
 
-- **Automatic URL Normalization:** Understands naked domains like `github.com`.
-- **Smart Discovery:** Parses all standard favicon HTML tags and handles relative vs. absolute URLs.
-- **Fallback Support:** Automatically probes `/favicon.ico` if no tags are found.
-- **JSON Output:** Run with `--json` to get parseable metadata.
-- **Cross-Platform:** Released for Linux, macOS, and Windows via GitHub Actions.
+For a given URL or domain, it normalizes `https://`, fetches the HTML, parses favicon candidates from `<link rel="icon">`, `shortcut icon`, `apple-touch-icon`, and fallback `/favicon.ico`, ranks the candidates, and lets the user preview the result before downloading.
+
+## v1.0.1 Web MVP Features
+
+- **Web UI preview:** enter a URL and preview discovered favicon candidates in the browser
+- **Format download:** download the selected icon as `png` or `jpg`
+- **SVG passthrough:** if the source icon is SVG, `svg` download is also available
+- **Shared Go core:** CLI and Web server reuse the same discovery/fetcher logic
+- **Container-ready:** includes `Dockerfile` and `docker-compose.yml`
 
 ## Quick Start
 
-Download the latest release from the [Releases page](https://github.com/chius-me/favicon-fisher/releases) or build it from source:
+Build the CLI:
 
 ```bash
 go build -o fvf ./cmd/fvf
 ```
 
-## Usage
+Build the Web server:
+
+```bash
+go build -o fvf-web ./cmd/fvf-web
+```
+
+## Run the Web UI
+
+```bash
+PORT=8080 ./fvf-web
+```
+
+Then open:
+
+```text
+http://localhost:8080
+```
+
+## Web API
+
+### `POST /api/preview`
+
+Request:
+
+```json
+{
+  "url": "https://github.com"
+}
+```
+
+Response shape:
+
+```json
+{
+  "input_url": "https://github.com",
+  "page_url": "https://github.com",
+  "recommended_icon_url": "https://github.githubassets.com/favicons/favicon.svg",
+  "icons": [
+    {
+      "icon_url": "https://github.githubassets.com/favicons/favicon.svg",
+      "source_rel": "icon",
+      "content_type": "image/svg+xml",
+      "allowed_types": ["svg"]
+    }
+  ]
+}
+```
+
+### `POST /api/download`
+
+Request:
+
+```json
+{
+  "icon_url": "https://github.githubassets.com/favicons/favicon.svg",
+  "format": "png"
+}
+```
+
+Response:
+- binary file payload
+- `Content-Disposition: attachment; filename="..."`
+
+## CLI Usage
 
 Basic run, saving to a `tmp` directory:
 
 ```bash
 ./fvf --out tmp https://github.com
-```
-
-Output:
-
-```text
-Saved favicon
-  page: https://github.com
-  icon: https://github.githubassets.com/favicons/favicon.svg
-  file: tmp/github.githubassets.com.svg
 ```
 
 JSON mode:
@@ -58,27 +117,15 @@ JSON mode:
 ./fvf --json --out tmp https://go.dev
 ```
 
-Output:
+## Docker
 
-```json
-{
-  "input_url": "https://go.dev",
-  "page_url": "https://go.dev",
-  "icon_url": "https://go.dev/images/favicon-gopher.svg",
-  "saved_path": "tmp/go.dev.svg",
-  "error": ""
-}
+Build and run with Docker Compose:
+
+```bash
+docker compose up --build
 ```
 
-## Release Builds
-
-The repository includes a GitHub Actions release workflow.
-
-When you push a tag starting with `v*` (e.g. `v0.1.0`), the workflow will:
-1. Run all tests.
-2. Cross-compile the binary for Linux, macOS, and Windows.
-3. Bundle the binaries into archives.
-4. Create a GitHub Release and upload the assets along with a `checksums.txt` file.
+Then open `http://localhost:8080`.
 
 ## Tests
 
@@ -88,11 +135,15 @@ go test ./...
 
 ## Project Structure
 
-- `cmd/fvf/`: The main CLI entrypoint.
-- `internal/fetcher/`: Core logic for discovery, candidate scoring, and downloading.
-- `docs/plans/`: Historical implementation plans.
+- `cmd/fvf/`: CLI entrypoint
+- `cmd/fvf-web/`: Web server entrypoint
+- `internal/fetcher/`: favicon discovery and download logic
+- `internal/convert/`: basic format conversion logic for Web downloads
+- `internal/web/`: API handlers and embedded static assets
+- `docs/plans/`: historical implementation plans
 
 ## Notes
 
-- The CLI uses a generous 10-second timeout for fetching to handle slow servers.
-- When an SVG is found, it is generally preferred over a PNG.
+- Current Web download conversion supports `png` and `jpg` for raster outputs.
+- SVG output is passthrough-only and only available when the source icon is SVG.
+- The CLI behavior remains available and unchanged for script usage.
