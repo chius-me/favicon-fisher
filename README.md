@@ -119,13 +119,39 @@ JSON mode:
 
 ## Docker
 
-Build and run with Docker Compose:
+Build and run locally with Docker Compose:
 
 ```bash
 docker compose up --build
 ```
 
 Then open `http://localhost:8080`.
+
+## Container Images
+
+GitHub Actions now publishes a GHCR image for `main` and for every `v*` tag.
+
+Image name:
+
+```text
+ghcr.io/chius-me/favicon-fisher
+```
+
+Examples:
+
+```bash
+docker run --rm -p 8080:8080 ghcr.io/chius-me/favicon-fisher:latest
+```
+
+```bash
+docker run --rm -p 8080:8080 ghcr.io/chius-me/favicon-fisher:v1.0.1
+```
+
+Tag behavior:
+- `main` branch push updates `:main`
+- default branch also updates `:latest`
+- every Git tag like `v1.0.1` publishes a matching image tag `:v1.0.1`
+- images are multi-arch: `linux/amd64` and `linux/arm64`
 
 ## Tests
 
