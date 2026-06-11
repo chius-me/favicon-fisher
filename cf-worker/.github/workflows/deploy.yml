@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'cf-worker/**'
+  workflow_dispatch:
 
 jobs:
   deploy:
