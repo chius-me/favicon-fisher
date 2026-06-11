@@ -3,3 +3,6 @@
 /tmp/
 /dist/
 /docs/
+cf-worker/node_modules/
+cf-worker/.wrangler/
+cf-worker/public/app.js

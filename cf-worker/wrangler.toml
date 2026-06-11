@@ -1,0 +1,6 @@
+name = "favicon-worker"
+main = "src/worker.ts"
+compatibility_date = "2026-06-02"
+
+[assets]
+directory = "./public"

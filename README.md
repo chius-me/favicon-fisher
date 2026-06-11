@@ -17,10 +17,11 @@
 
 ## Overview
 
-`favicon-fisher` now ships two entrypoints:
+`favicon-fisher` ships multiple entrypoints:
 
-- `fvf`: the existing CLI for favicon discovery and download
+- `fvf`: the CLI for favicon discovery and download
 - `fvf-web`: a lightweight Web UI/API for previewing discovered icons and downloading them as another format
+- `cf-worker`: a Cloudflare Workers variant with zero server-side image processing at `cf-worker/`
 
 For a given URL or domain, it normalizes `https://`, fetches the HTML, parses favicon candidates from `<link rel="icon">`, `shortcut icon`, `apple-touch-icon`, and fallback `/favicon.ico`, ranks the candidates, and lets the user preview the result before downloading.
 
@@ -166,6 +167,7 @@ go test ./...
 - `internal/fetcher/`: favicon discovery and download logic
 - `internal/convert/`: basic format conversion logic for Web downloads
 - `internal/web/`: API handlers and embedded static assets
+- `cf-worker/`: Cloudflare Workers variant (TypeScript, zero server-side image processing)
 - `docs/plans/`: historical implementation plans
 
 ## Notes

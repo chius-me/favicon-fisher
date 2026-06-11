@@ -89,7 +89,11 @@ go test ./...
 ## 项目结构
 
 - `cmd/fvf/`: CLI 主入口。
+- `cmd/fvf-web/`: Web 服务器主入口。
 - `internal/fetcher/`：包含发现、候选评分与下载的核心业务逻辑。
+- `internal/convert/`：格式转换逻辑。
+- `internal/web/`：API 处理器与嵌入式静态资源。
+- `cf-worker/`：Cloudflare Workers 变体（TypeScript，零服务端图像处理）。
 - `docs/plans/`：历史实现计划与记录。
 
 ## 补充说明
