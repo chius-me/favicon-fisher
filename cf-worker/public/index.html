@@ -9,13 +9,13 @@
 <body>
   <main class="app">
     <section class="panel">
-      <h1>🎣 favicon-fisher</h1>
-      <p class="subtitle">Discover a website's favicon, preview candidates, and download in your preferred format.</p>
+      <h1>favicon-fisher</h1>
+      <p class="subtitle">Preview and download website icons in your preferred format.</p>
 
       <form id="preview-form" class="stack">
         <label for="url">Website URL</label>
         <div class="row">
-          <input id="url" name="url" type="text" placeholder="https://github.com" required>
+          <input id="url" name="url" type="text" placeholder="https://example.com" required>
           <button type="submit" id="preview-btn">Preview</button>
         </div>
       </form>
@@ -29,16 +29,16 @@
             <img id="hero-icon" alt="Selected favicon preview">
           </div>
           <div class="meta">
-            <div><strong>Page:</strong> <span id="page-url"></span></div>
-            <div><strong>Selected:</strong> <span id="selected-url"></span></div>
+            <div><strong>Page</strong> <span id="page-url"></span></div>
+            <div><strong>Selected</strong> <span id="selected-url"></span></div>
           </div>
         </div>
 
         <div class="controls">
-          <h2>Icon candidates</h2>
+          <h2>Candidates</h2>
           <div id="icon-list" class="icon-list"></div>
 
-          <label for="format">Download format</label>
+          <label for="format">Format</label>
           <select id="format"></select>
 
           <button id="download-btn" type="button">Download</button>
