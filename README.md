@@ -5,7 +5,7 @@
 <h1 align="center">favicon-fisher</h1>
 
 <p align="center">
-  A small Go toolset that discovers a website's favicon, previews candidates in a Web UI, and downloads the chosen icon in a supported format.
+  Discover, preview, and download a website's favicon — via CLI, Web UI, or Cloudflare Worker.
 </p>
 
 <p align="center">
@@ -13,57 +13,71 @@
   <img alt="Language" src="https://img.shields.io/badge/Language-Go-00ADD8.svg">
   <img alt="Releases" src="https://img.shields.io/github/v/release/chius-me/favicon-fisher?color=success">
   <img alt="CI" src="https://github.com/chius-me/favicon-fisher/actions/workflows/ci.yml/badge.svg">
+  <img alt="Container" src="https://github.com/chius-me/favicon-fisher/actions/workflows/container.yml/badge.svg">
 </p>
 
-## Overview
+## What is this?
 
-`favicon-fisher` ships multiple entrypoints:
+`favicon-fisher` is a minimalist tool that discovers a website's favicon, lets you preview the candidates, and downloads the one you want. It ships in three flavours:
 
-- `fvf`: the CLI for favicon discovery and download
-- `fvf-web`: a lightweight Web UI/API for previewing discovered icons and downloading them as another format
-- `cf-worker`: a Cloudflare Workers variant with zero server-side image processing at `cf-worker/`
+| Flavour | Description | Stack |
+|---|---|---|
+| **`fvf`** | CLI — favicon discovery and download | Go |
+| **`fvf-web`** | Browser-based Web UI + API | Go |
+| **`favicon-worker`** | Zero-infra Cloudflare Workers deployment | TypeScript |
 
-For a given URL or domain, it normalizes `https://`, fetches the HTML, parses favicon candidates from `<link rel="icon">`, `shortcut icon`, `apple-touch-icon`, and fallback `/favicon.ico`, ranks the candidates, and lets the user preview the result before downloading.
-
-## v1.0.1 Web MVP Features
-
-- **Web UI preview:** enter a URL and preview discovered favicon candidates in the browser
-- **Format download:** download the selected icon as `png` or `jpg`
-- **SVG passthrough:** if the source icon is SVG, `svg` download is also available
-- **Shared Go core:** CLI and Web server reuse the same discovery/fetcher logic
-- **Container-ready:** includes `Dockerfile` and `docker-compose.yml`
+Given a URL or domain, it normalises `https://`, fetches the HTML, parses favicon candidates from `<link rel="icon">`, `shortcut icon`, `apple-touch-icon`, web manifest icons, and the `/favicon.ico` fallback, ranks them by relevance, and lets you preview and download in your format of choice.
 
 ## Quick Start
 
-Build the CLI:
+### CLI
 
 ```bash
 go build -o fvf ./cmd/fvf
+./fvf --out tmp https://github.com
 ```
 
-Build the Web server:
+### Web UI
 
 ```bash
 go build -o fvf-web ./cmd/fvf-web
+PORT=8080 ./fvf-web
+# Open http://localhost:8080
 ```
 
-## Run the Web UI
+### Docker
 
 ```bash
-PORT=8080 ./fvf-web
+docker compose up --build
+# Open http://localhost:8080
 ```
 
-Then open:
+### Cloudflare Worker
 
-```text
-http://localhost:8080
+```bash
+cd worker
+npm install
+npx wrangler deploy
 ```
+
+See the [`worker/`](./worker/) directory for full Worker documentation.
+
+## Features
+
+- **Smart discovery** — parses `<link rel="icon">`, `shortcut icon`, `apple-touch-icon`, `mask-icon`, web manifest, and `/favicon.ico` fallback
+- **URL normalisation** — accepts bare domains (e.g. `github.com`) and normalises to `https://`
+- **Candidate ranking** — picks the best icon by size, type, and source priority
+- **Format conversion** — download as **png**, **jpg**, **webp** or **ico** (Worker) / **png**, **jpg** or **svg** (fvf-web)
+- **Zero server-side image processing** (Worker) — all raster conversion runs in-browser via Canvas API
+- **Cross-platform releases** — pre-built binaries for Linux, macOS, and Windows on the [Releases page](https://github.com/chius-me/favicon-fisher/releases)
 
 ## Web API
 
+Both `fvf-web` and `favicon-worker` expose the same API shape.
+
 ### `POST /api/preview`
 
-Request:
+Discover favicon candidates for a URL.
 
 ```json
 {
@@ -71,7 +85,7 @@ Request:
 }
 ```
 
-Response shape:
+Response:
 
 ```json
 {
@@ -89,9 +103,9 @@ Response shape:
 }
 ```
 
-### `POST /api/download`
+### `POST /api/download` (fvf-web)
 
-Request:
+Download an icon in a chosen format. Returns the binary file.
 
 ```json
 {
@@ -100,59 +114,41 @@ Request:
 }
 ```
 
-Response:
-- binary file payload
-- `Content-Disposition: attachment; filename="..."`
+### `GET /api/proxy?url=<icon_url>` (Worker)
+
+Proxies an icon download to bypass browser CORS restrictions.
 
 ## CLI Usage
 
-Basic run, saving to a `tmp` directory:
-
 ```bash
-./fvf --out tmp https://github.com
+fvf [--out DIR] [--json] <url>
 ```
 
-JSON mode:
-
-```bash
-./fvf --json --out tmp https://go.dev
-```
-
-## Docker
-
-Build and run locally with Docker Compose:
-
-```bash
-docker compose up --build
-```
-
-Then open `http://localhost:8080`.
-
-## Container Images
-
-GitHub Actions now publishes a GHCR image for `main` and for every `v*` tag.
-
-Image name:
-
-```text
-ghcr.io/chius-me/favicon-fisher
-```
+| Flag | Description |
+|---|---|
+| `--out DIR` | Output directory (default: current dir) |
+| `--json` | Structured JSON output for scripting |
 
 Examples:
 
 ```bash
-docker run --rm -p 8080:8080 ghcr.io/chius-me/favicon-fisher:latest
+# Basic usage
+./fvf --out tmp https://github.com
+
+# JSON mode for programmatic use
+./fvf --json --out tmp https://go.dev
 ```
 
+## Container Images
+
+Pre-built multi-arch images (`linux/amd64` + `linux/arm64`) are available on GHCR:
+
 ```bash
+docker run --rm -p 8080:8080 ghcr.io/chius-me/favicon-fisher:latest
 docker run --rm -p 8080:8080 ghcr.io/chius-me/favicon-fisher:v1.0.1
 ```
 
-Tag behavior:
-- `main` branch push updates `:main`
-- default branch also updates `:latest`
-- every Git tag like `v1.0.1` publishes a matching image tag `:v1.0.1`
-- images are multi-arch: `linux/amd64` and `linux/arm64`
+Tags: `:latest` (default branch), `:main`, `:vX.Y.Z` (release tags), `:sha-<hash>`.
 
 ## Tests
 
@@ -162,16 +158,21 @@ go test ./...
 
 ## Project Structure
 
-- `cmd/fvf/`: CLI entrypoint
-- `cmd/fvf-web/`: Web server entrypoint
-- `internal/fetcher/`: favicon discovery and download logic
-- `internal/convert/`: basic format conversion logic for Web downloads
-- `internal/web/`: API handlers and embedded static assets
-- `cf-worker/`: Cloudflare Workers variant (TypeScript, zero server-side image processing)
-- `docs/plans/`: historical implementation plans
+| Path | Description |
+|---|---|
+| `cmd/fvf/` | CLI entrypoint |
+| `cmd/fvf-web/` | Web server entrypoint |
+| `internal/fetcher/` | Core discovery, ranking and download logic |
+| `internal/convert/` | Format conversion (Go image processing) |
+| `internal/web/` | API handlers and embedded static assets |
+| `worker/` | Cloudflare Workers variant (TypeScript, zero server-side processing) |
 
 ## Notes
 
-- Current Web download conversion supports `png` and `jpg` for raster outputs.
-- SVG output is passthrough-only and only available when the source icon is SVG.
-- The CLI behavior remains available and unchanged for script usage.
+- SVG output is passthrough-only — only available when the source icon is SVG.
+- The Worker variant handles ICO output by wrapping a PNG inside a minimal ICO container.
+- CLI has a 10-second timeout for slow servers.
+
+## License
+
+[MIT](./LICENSE)

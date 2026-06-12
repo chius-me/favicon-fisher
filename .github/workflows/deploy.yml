@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'cf-worker/**'
+      - 'worker/**'
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: cf-worker
+        working-directory: worker
     steps:
       - uses: actions/checkout@v6
 
@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cf-worker/package-lock.json
+          cache-dependency-path: worker/package-lock.json
 
       - run: npm ci
 
