@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg">
+  <img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue.svg">
   <img alt="Language" src="https://img.shields.io/badge/Language-Go-00ADD8.svg">
   <img alt="Releases" src="https://img.shields.io/github/v/release/chius-me/favicon-fisher?color=success">
   <img alt="CI" src="https://github.com/chius-me/favicon-fisher/actions/workflows/ci.yml/badge.svg">
@@ -258,4 +258,4 @@ npm run check
 
 ## 许可证
 
-[MIT](./LICENSE)
+[GNU GPL v3.0](./LICENSE)
