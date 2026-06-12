@@ -5,7 +5,7 @@
 <h1 align="center">favicon-fisher</h1>
 
 <p align="center">
-  发现、预览并下载任意网站的 favicon — 支持 CLI、Web UI、Cloudflare Worker 三种形态。
+  发现、预览并下载任意网站的 favicon，支持 CLI、Go Web UI 和 Cloudflare Worker。
 </p>
 
 <p align="center">
@@ -18,15 +18,23 @@
 
 ## 项目简介
 
-`favicon-fisher` 是一个轻量级工具，用于发现网站的 favicon、预览候选图标并下载精选结果。提供三种使用方式：
+`favicon-fisher` 会发现网站的 favicon 候选项、排序，并下载你选择的图标。你可以在终端中使用它，也可以运行本地 Web 应用，或把 Worker 版本部署到 Cloudflare。
 
 | 形态 | 说明 | 技术栈 |
 |---|---|---|
-| **`fvf`** | 命令行工具 — favicon 发现与下载 | Go |
+| **`fvf`** | 命令行 favicon 发现与下载工具 | Go |
 | **`fvf-web`** | 浏览器 Web UI + API | Go |
 | **`favicon-worker`** | Cloudflare Workers 零运维部署 | TypeScript |
 
-给定一个 URL 或域名，它会自动补全 `https://`，抓取 HTML，从 `<link rel="icon">`、`shortcut icon`、`apple-touch-icon`、Web manifest 以及兜底的 `/favicon.ico` 中解析候选图标，按相关性排序，让你预览并选择格式下载。
+给定 URL 或裸域名后，应用会在需要时补全 `https://`，抓取页面，从 `<link rel="icon">`、`shortcut icon`、`apple-touch-icon`、`mask-icon`、Web manifest 和 `/favicon.ico` 中解析候选图标，再按来源和尺寸排序。
+
+## 环境要求
+
+| 任务 | 要求 |
+|---|---|
+| 构建 CLI 或 Go Web UI | Go 1.26+ |
+| 使用 Docker 运行 | Docker 和 Docker Compose v2 |
+| 部署 Worker | Node.js 20+ 和 Wrangler |
 
 ## 快速开始
 
@@ -36,6 +44,8 @@
 go build -o fvf ./cmd/fvf
 ./fvf --out tmp https://github.com
 ```
+
+运行 `./fvf --help` 查看全部参数。
 
 ### Web UI
 
@@ -52,6 +62,8 @@ docker compose up --build
 # 打开 http://localhost:8080
 ```
 
+Compose 文件名为 `docker-compose.yaml`，Docker Compose 会默认识别。
+
 ### Cloudflare Worker
 
 ```bash
@@ -64,20 +76,94 @@ Worker 模式的完整文档请参阅 [`worker/`](./worker/) 目录。
 
 ## 功能特性
 
-- **智能发现** — 解析 `<link rel="icon">`、`shortcut icon`、`apple-touch-icon`、`mask-icon`、Web manifest 以及 `/favicon.ico`
-- **URL 规范化** — 接受裸域名（如 `github.com`），自动补全 `https://`
-- **候选排序** — 按尺寸、类型和来源优先级自动选择最佳图标
-- **格式转换** — 支持下载为 **png**、**jpg**、**webp** 或 **ico**（Worker）/ **png**、**jpg** 或 **svg**（fvf-web）
-- **零服务端图像处理**（Worker）— 所有像素转换在浏览器 Canvas API 上完成
-- **跨平台发布** — 在 [Releases 页面](https://github.com/chius-me/favicon-fisher/releases) 提供 Linux、macOS、Windows 预编译二进制
+- **智能发现**：解析 `<link rel="icon">`、`shortcut icon`、`apple-touch-icon`、`mask-icon`、Web manifest 以及 `/favicon.ico`
+- **URL 规范化**：接受裸域名（如 `github.com`），自动补全 `https://`
+- **候选排序**：按尺寸、类型和来源优先级自动选择最佳图标
+- **批量下载**：CLI 可通过 `--all` 下载所有发现的候选图标
+- **代理支持**：CLI 支持 `--proxy`，也会读取 `HTTP_PROXY` / `HTTPS_PROXY`
+- **格式转换**：`fvf-web` 在源文件支持时可下载 **png**、**jpg**、**svg** 或 **ico**；Worker 浏览器代码支持 **png**、**jpg**、**webp**、**ico** 和 **svg** 直通
+- **Worker 零服务端图像处理**：栅格格式转换在浏览器 Canvas API 上完成
+- **跨平台发布**：在 [Releases 页面](https://github.com/chius-me/favicon-fisher/releases) 提供 Linux、macOS、Windows 预编译二进制
+
+## CLI 使用
+
+```bash
+fvf [flags] <url>
+```
+
+| 参数 | 说明 |
+|---|---|
+| `-o, --out DIR` | 输出目录。默认：`./out` |
+| `--json` | 输出结构化 JSON，适合脚本处理 |
+| `--all` | 下载所有发现的 favicon 候选项，而不是只下载最佳结果 |
+| `--proxy URL` | 使用 HTTP 代理，例如 `http://127.0.0.1:8080` |
+
+示例：
+
+```bash
+# 下载最佳 favicon
+./fvf --out tmp https://github.com
+
+# 下载所有候选项
+./fvf --all --out tmp https://go.dev
+
+# 输出 JSON
+./fvf --json --out tmp https://go.dev
+
+# 使用显式代理
+./fvf --proxy http://127.0.0.1:8080 https://example.com
+```
+
+省略 `<url>` 时，`fvf` 会进入交互式输入。JSON 模式必须提供 URL 参数。
+
+## Go Web UI
+
+运行本地服务：
+
+```bash
+go build -o fvf-web ./cmd/fvf-web
+PORT=8080 ./fvf-web
+```
+
+打开 `http://localhost:8080`，输入 URL，预览候选图标并下载所选图标。服务会读取 `PORT`；未设置时监听 `8080`。
+
+## Docker
+
+构建并运行本地镜像：
+
+```bash
+docker compose up --build
+```
+
+如需换成本机其他端口，不需要改变容器内应用端口：
+
+```bash
+PORT=9090 docker compose up --build
+# 打开 http://localhost:9090
+```
+
+停止服务：
+
+```bash
+docker compose down
+```
+
+直接运行已发布镜像：
+
+```bash
+docker run --rm -p 8080:8080 ghcr.io/chius-me/favicon-fisher:latest
+docker run --rm -p 8080:8080 ghcr.io/chius-me/favicon-fisher:v1.0.1
+```
+
+镜像标签：`:latest` 表示默认分支，另有 `:main`、发布标签如 `:vX.Y.Z`、提交标签如 `:sha-<hash>`。
 
 ## API
 
-`fvf-web` 和 `favicon-worker` 暴露相同的 API 接口。
+Go Web UI 和 Worker 共用预览接口。下载流程不同，因为 Worker 在浏览器中完成转换。
 
 ### `POST /api/preview`
 
-发现指定 URL 的 favicon 候选列表。
+发现指定 URL 的 favicon 候选列表。`fvf-web` 会过滤掉无法下载的候选项，Worker 返回浏览器可转换的候选项。
 
 ```json
 {
@@ -105,7 +191,7 @@ Worker 模式的完整文档请参阅 [`worker/`](./worker/) 目录。
 
 ### `POST /api/download`（fvf-web）
 
-下载所选格式的图标。返回二进制文件。
+从 Go Web UI 下载指定格式的图标。响应体是二进制文件。
 
 ```json
 {
@@ -116,44 +202,40 @@ Worker 模式的完整文档请参阅 [`worker/`](./worker/) 目录。
 
 ### `GET /api/proxy?url=<icon_url>`（Worker）
 
-代理图标下载以绕过浏览器的 CORS 限制。
+通过 Worker 代理图标下载，帮助浏览器绕过远端 CORS 限制。
 
-## CLI 使用
+## Cloudflare Worker
 
-```bash
-fvf [--out DIR] [--json] <url>
-```
-
-| 参数 | 说明 |
-|---|---|
-| `--out DIR` | 输出目录（默认为当前目录） |
-| `--json` | 输出结构化 JSON，适合脚本处理 |
-
-示例：
+Worker 版本提供相同风格的 UI、静态资源和 TypeScript Worker API。它不在服务端运行 Go 图像转换。浏览器代码通过 `/api/proxy` 获取图标字节，再用 Canvas 转换栅格格式。
 
 ```bash
-# 基础用法
-./fvf --out tmp https://github.com
-
-# JSON 模式
-./fvf --json --out tmp https://go.dev
+cd worker
+npm install
+npx wrangler deploy
 ```
 
-## 容器镜像
+Worker 专用命令和部署说明见 [`worker/README.zh.md`](./worker/README.zh.md)。
 
-多架构镜像（`linux/amd64` + `linux/arm64`）已发布至 GHCR：
+## 开发
+
+构建两个 Go 入口：
 
 ```bash
-docker run --rm -p 8080:8080 ghcr.io/chius-me/favicon-fisher:latest
-docker run --rm -p 8080:8080 ghcr.io/chius-me/favicon-fisher:v1.0.1
+go build ./cmd/fvf ./cmd/fvf-web
 ```
 
-标签：`:latest`（默认分支）、`:main`、`:vX.Y.Z`（发布版本）、`:sha-<hash>`。
-
-## 测试
+运行测试：
 
 ```bash
 go test ./...
+```
+
+运行 Worker 检查：
+
+```bash
+cd worker
+npm install
+npm run check
 ```
 
 ## 项目结构
@@ -169,9 +251,10 @@ go test ./...
 
 ## 补充说明
 
-- SVG 输出为直通模式，仅当源图标为 SVG 时才可用。
-- Worker 版通过将 PNG 包装在最小 ICO 容器中实现 ICO 输出。
-- CLI 对慢速服务器设置了 10 秒超时。
+- SVG 输出为直通模式，要求源图标为 SVG。
+- `fvf-web` 的 ICO 输出为直通模式，要求源图标为 ICO。
+- Worker 版在浏览器中将 PNG 字节包装为最小 ICO 容器来生成 ICO 输出。
+- CLI 和 Web 请求对慢速服务器使用 15 秒超时。
 
 ## 许可证
 
