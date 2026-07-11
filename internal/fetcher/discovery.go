@@ -125,6 +125,8 @@ func relPriority(rel string) int {
 	switch rel {
 	case "icon", "shortcut icon":
 		return 10
+	case "manifest":
+		return 15
 	case "apple-touch-icon", "apple-touch-icon-precomposed":
 		return 20
 	case "mask-icon":
@@ -144,7 +146,47 @@ func resolveURL(base *url.URL, href string) string {
 	if err != nil {
 		return ""
 	}
-	return base.ResolveReference(parsed).String()
+	// Only allow http(s) icon targets (block javascript:, data:, file:, etc.)
+	resolved := base.ResolveReference(parsed)
+	if resolved.Scheme != "http" && resolved.Scheme != "https" {
+		return ""
+	}
+	return resolved.String()
+}
+
+func resolveURLMust(baseURL, href string) string {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+	return resolveURL(base, href)
+}
+
+// FindManifestHref returns the first <link rel="manifest"> href from HTML body.
+func FindManifestHref(body io.Reader) string {
+	root, err := html.Parse(body)
+	if err != nil {
+		return ""
+	}
+	var found string
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		if found != "" {
+			return
+		}
+		if node.Type == html.ElementNode && node.Data == "link" {
+			rel := strings.ToLower(strings.TrimSpace(getAttr(node, "rel")))
+			if rel == "manifest" {
+				found = strings.TrimSpace(getAttr(node, "href"))
+				return
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(root)
+	return found
 }
 
 func sizeScore(sizes string) int {

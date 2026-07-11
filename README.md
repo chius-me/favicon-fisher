@@ -161,9 +161,11 @@ Published tags: `:latest` for the default branch, `:main`, release tags such as 
 
 The Go Web UI and Worker share the preview endpoint. Download behavior differs because the Worker performs conversion in the browser.
 
+Download and proxy endpoints require a short-lived **HMAC token** returned by preview (prevents open proxy abuse).
+
 ### `POST /api/preview`
 
-Discover favicon candidates for a URL. `fvf-web` filters out candidates it cannot download. The Worker returns browser-convertible candidates.
+Discover favicon candidates for a URL (HTML icons, web manifest icons, `/favicon.ico`). Extensionless CDN URLs are probed for `Content-Type` when needed.
 
 ```json
 {
@@ -181,6 +183,7 @@ Response:
   "icons": [
     {
       "icon_url": "https://github.githubassets.com/favicons/favicon.svg",
+      "token": "<hmac-token>",
       "source_rel": "icon",
       "content_type": "image/svg+xml",
       "allowed_types": ["svg"]
@@ -191,18 +194,42 @@ Response:
 
 ### `POST /api/download` (fvf-web)
 
-Download an icon in a chosen format from the Go Web UI. The response body is the binary file.
+Download an icon in a chosen format. Requires the `token` from preview. The response body is the binary file.
 
 ```json
 {
   "icon_url": "https://github.githubassets.com/favicons/favicon.svg",
-  "format": "png"
+  "format": "png",
+  "token": "<hmac-token>"
 }
 ```
 
-### `GET /api/proxy?url=<icon_url>` (Worker)
+### `GET /api/proxy?url=<icon_url>&token=<hmac-token>` (Worker)
 
-Proxy an icon download through the Worker so browser code can bypass remote CORS restrictions.
+Proxy an icon download through the Worker so browser code can bypass remote CORS restrictions. The token is required.
+
+## Security
+
+`fvf-web` and the Worker act as server-side fetchers. Public deployments apply these controls by default:
+
+| Control | Behavior |
+|---|---|
+| **SSRF guards** | Only `http`/`https`; blocks private, loopback, link-local, CGNAT, and metadata-style targets; re-validates redirects |
+| **Signed tokens** | `/api/download` and `/api/proxy` require a preview-issued HMAC token (TTL 15 minutes) |
+| **Body limits** | HTML ≤ 5 MiB, icons ≤ 5 MiB, manifests ≤ 1 MiB, JSON requests ≤ 64 KiB |
+| **Rate limit** | 60 API requests / minute / client IP (best-effort) |
+| **Security headers** | `X-Content-Type-Options`, `CSP`, `X-Frame-Options`, `Referrer-Policy` |
+| **Error hygiene** | Upstream dial/DNS details are not leaked to clients |
+
+Environment variables:
+
+| Variable | Applies to | Description |
+|---|---|---|
+| `FVF_SIGNING_SECRET` | Web + Worker | HMAC secret for download/proxy tokens. Set a stable value in production. |
+| `FVF_ALLOW_PRIVATE` | Web + Worker | Set to `1` only on trusted private networks. **Never** enable on the public internet. |
+| `PORT` | Web | Listen port (default `8080`) |
+
+The **CLI** allows private/local targets (developer servers) but still enforces `http`/`https`, User-Agent, timeouts, and body size limits.
 
 ## Cloudflare Worker
 
@@ -211,6 +238,7 @@ The Worker variant serves the same UI style with static assets and a TypeScript 
 ```bash
 cd worker
 npm install
+npx wrangler secret put FVF_SIGNING_SECRET
 npx wrangler deploy
 ```
 
@@ -228,6 +256,7 @@ Run tests:
 
 ```bash
 go test ./...
+go test -race ./...
 ```
 
 Run Worker checks:
@@ -236,7 +265,10 @@ Run Worker checks:
 cd worker
 npm install
 npm run check
+npm run build
 ```
+
+Shared discovery fixtures live under `testdata/golden/`.
 
 ## Project Structure
 
@@ -246,8 +278,10 @@ npm run check
 | `cmd/fvf-web/` | Web server entrypoint |
 | `internal/fetcher/` | Core discovery, ranking and download logic |
 | `internal/convert/` | Format conversion (Go image processing) |
+| `internal/security/` | SSRF, signing, rate limits, headers, body limits |
 | `internal/web/` | API handlers and embedded static assets |
 | `worker/` | Cloudflare Workers variant (TypeScript, zero server-side processing) |
+| `testdata/golden/` | Shared HTML/manifest fixtures for discovery tests |
 
 ## Notes
 
@@ -255,6 +289,7 @@ npm run check
 - ICO output in `fvf-web` is passthrough-only and requires an ICO source.
 - The Worker variant creates ICO output in the browser by wrapping PNG bytes in a minimal ICO container.
 - CLI and web requests use a 15-second timeout for slow servers.
+- Docker image runs as non-root (`65532`). Compose enables `read_only` root filesystem with a `/tmp` tmpfs.
 
 ## License
 

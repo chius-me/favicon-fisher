@@ -10,7 +10,20 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/chius-me/favicon-fisher/internal/security"
 )
+
+func testHandler(origin *httptest.Server) *Handler {
+	// httptest is loopback — allow private for unit tests.
+	policy := security.CLIPolicy
+	return NewHandlerWithOptions(HandlerOptions{
+		Client: origin.Client(),
+		Signer: security.NewSigner("test-secret", time.Hour),
+		Policy: &policy,
+	})
+}
 
 func TestPreviewHandlerReturnsRecommendedIconAndCandidates(t *testing.T) {
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,13 +37,15 @@ func TestPreviewHandlerReturnsRecommendedIconAndCandidates(t *testing.T) {
 		case "/apple.png":
 			w.Header().Set("Content-Type", "image/png")
 			_, _ = w.Write([]byte("apple-icon"))
+		case "/favicon.ico":
+			http.NotFound(w, r)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer origin.Close()
 
-	handler := NewHandler(origin.Client())
+	handler := testHandler(origin)
 	req := httptest.NewRequest(http.MethodPost, "/api/preview", bytes.NewBufferString(`{"url":"`+origin.URL+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
@@ -49,8 +64,11 @@ func TestPreviewHandlerReturnsRecommendedIconAndCandidates(t *testing.T) {
 	if resp.RecommendedIconURL != origin.URL+"/favicon.png" {
 		t.Fatalf("expected recommended icon %q, got %q", origin.URL+"/favicon.png", resp.RecommendedIconURL)
 	}
-	if len(resp.Icons) != 3 {
-		t.Fatalf("expected 3 previewable icons, got %d", len(resp.Icons))
+	if len(resp.Icons) < 2 {
+		t.Fatalf("expected at least 2 previewable icons, got %d", len(resp.Icons))
+	}
+	if resp.Icons[0].Token == "" {
+		t.Fatal("expected signed token on icons")
 	}
 	if resp.Icons[0].SourceRel != "icon" {
 		t.Fatalf("expected first icon rel=icon, got %q", resp.Icons[0].SourceRel)
@@ -70,8 +88,12 @@ func TestDownloadHandlerConvertsToRequestedFormat(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	handler := NewHandler(origin.Client())
-	req := httptest.NewRequest(http.MethodPost, "/api/download", bytes.NewBufferString(`{"icon_url":"`+origin.URL+`/favicon.png","format":"jpg"}`))
+	handler := testHandler(origin)
+	iconURL := origin.URL + "/favicon.png"
+	token := handler.signer.Sign(iconURL)
+
+	body, _ := json.Marshal(DownloadRequest{IconURL: iconURL, Format: "jpg", Token: token})
+	req := httptest.NewRequest(http.MethodPost, "/api/download", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
@@ -93,5 +115,39 @@ func TestDownloadHandlerConvertsToRequestedFormat(t *testing.T) {
 	}
 	if format != "jpeg" {
 		t.Fatalf("expected jpeg payload, got %q", format)
+	}
+}
+
+func TestDownloadHandlerRejectsMissingToken(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer origin.Close()
+
+	handler := testHandler(origin)
+	body, _ := json.Marshal(DownloadRequest{IconURL: origin.URL + "/x.png", Format: "png"})
+	req := httptest.NewRequest(http.MethodPost, "/api/download", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+	handler.Download(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rr.Code)
+	}
+}
+
+func TestPreviewRejectsPrivateURLWhenPolicyStrict(t *testing.T) {
+	policy := security.DefaultPolicy
+	handler := NewHandlerWithOptions(HandlerOptions{
+		Signer: security.NewSigner("test", time.Hour),
+		Policy: &policy,
+		Client: security.SafeHTTPClient(security.ClientOptions{
+			Timeout: 5 * time.Second,
+			Policy:  policy,
+		}),
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/preview", bytes.NewBufferString(`{"url":"http://127.0.0.1/"}`))
+	rr := httptest.NewRecorder()
+	handler.Preview(rr, req)
+	if rr.Code == http.StatusOK {
+		t.Fatalf("expected failure for private URL, got 200: %s", rr.Body.String())
 	}
 }

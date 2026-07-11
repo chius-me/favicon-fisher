@@ -1,6 +1,9 @@
 package fetcher
 
 import (
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -98,5 +101,49 @@ func TestBestCandidatePrefersStandardIconBeforeFallback(t *testing.T) {
 
 	if best.URL != "https://example.com/icon-32.png" {
 		t.Fatalf("expected standard icon candidate, got %q", best.URL)
+	}
+}
+
+func TestDiscoverCandidatesGoldenFixture(t *testing.T) {
+	// Shared golden HTML used to keep Go discovery aligned with documented behavior.
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "golden", "sample.html"))
+	if err != nil {
+		t.Fatalf("read golden fixture: %v", err)
+	}
+
+	candidates, err := DiscoverCandidates("https://example.com/blog/post", strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatalf("DiscoverCandidates: %v", err)
+	}
+
+	want := map[string]bool{
+		"https://example.com/favicon-32.png":     false,
+		"https://cdn.example.com/apple.png":      false,
+		"https://example.com/safari.svg":         false,
+		"https://example.com/favicon.ico":        false,
+	}
+	for _, c := range candidates {
+		if _, ok := want[c.URL]; ok {
+			want[c.URL] = true
+		}
+	}
+	for url, found := range want {
+		if !found {
+			t.Errorf("missing candidate %s", url)
+		}
+	}
+
+	if href := FindManifestHref(strings.NewReader(string(data))); href != "/site.webmanifest" {
+		t.Fatalf("expected manifest href /site.webmanifest, got %q", href)
+	}
+}
+
+func TestResolveURLRejectsNonHTTPSchemes(t *testing.T) {
+	base, _ := url.Parse("https://example.com/")
+	if got := resolveURL(base, "javascript:alert(1)"); got != "" {
+		t.Fatalf("expected empty for javascript URL, got %q", got)
+	}
+	if got := resolveURL(base, "data:text/html,x"); got != "" {
+		t.Fatalf("expected empty for data URL, got %q", got)
 	}
 }

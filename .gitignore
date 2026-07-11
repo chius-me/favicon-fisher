@@ -8,3 +8,7 @@
 worker/node_modules/
 worker/.wrangler/
 worker/public/app.js
+worker/.dev.vars
+.env
+.env.*
+!.env.example

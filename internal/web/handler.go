@@ -12,20 +12,49 @@ import (
 
 	"github.com/chius-me/favicon-fisher/internal/convert"
 	"github.com/chius-me/favicon-fisher/internal/fetcher"
+	"github.com/chius-me/favicon-fisher/internal/security"
 )
 
 type Handler struct {
 	client  *http.Client
 	fetcher *fetcher.Fetcher
+	signer  *security.Signer
+	policy  security.Policy
+}
+
+// HandlerOptions configures the web API handler.
+type HandlerOptions struct {
+	Client *http.Client
+	Signer *security.Signer
+	// Policy defaults to DefaultPolicy (SSRF-safe, no private IPs).
+	Policy *security.Policy
 }
 
 func NewHandler(client *http.Client) *Handler {
+	return NewHandlerWithOptions(HandlerOptions{Client: client})
+}
+
+func NewHandlerWithOptions(opts HandlerOptions) *Handler {
+	policy := security.DefaultPolicy
+	if opts.Policy != nil {
+		policy = *opts.Policy
+	}
+	client := opts.Client
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = security.SafeHTTPClient(security.ClientOptions{
+			Timeout: 15 * time.Second,
+			Policy:  policy,
+		})
+	}
+	signer := opts.Signer
+	if signer == nil {
+		signer = security.NewSigner("", security.DefaultTokenTTL)
 	}
 	return &Handler{
 		client:  client,
-		fetcher: fetcher.New(client),
+		fetcher: fetcher.NewWithPolicy(client, policy),
+		signer:  signer,
+		policy:  policy,
 	}
 }
 
@@ -36,7 +65,7 @@ func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req PreviewRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid JSON body"})
 		return
 	}
@@ -47,19 +76,23 @@ func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.fetcher.Preview(r.Context(), req.URL)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, errorResponse{Error: err.Error()})
+		writeJSON(w, http.StatusBadGateway, errorResponse{Error: security.PublicError(err)})
 		return
 	}
 
 	icons := make([]IconPreview, 0, len(result.Candidates))
 	for _, candidate := range result.Candidates {
-		contentType := detectContentTypeFromURL(candidate.URL)
+		contentType := candidate.Type
+		if contentType == "" {
+			contentType = detectContentTypeFromURL(candidate.URL)
+		}
 		allowed := allowedTypesFor(candidate.URL, contentType)
 		if len(allowed) == 0 {
 			continue
 		}
 		icons = append(icons, IconPreview{
 			IconURL:      candidate.URL,
+			Token:        h.signer.Sign(candidate.URL),
 			SourceRel:    candidate.Rel,
 			Sizes:        candidate.Sizes,
 			ContentType:  contentType,
@@ -67,12 +100,19 @@ func (h *Handler) Preview(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	if len(icons) == 0 {
-		writeJSON(w, http.StatusBadGateway, errorResponse{Error: "no previewable icons found"})
+		writeJSON(w, http.StatusBadGateway, errorResponse{Error: "no favicon candidates found"})
 		return
 	}
 
 	recommended := result.Best.URL
-	if len(allowedTypesFor(result.Best.URL, detectContentTypeFromURL(result.Best.URL))) == 0 {
+	found := false
+	for _, icon := range icons {
+		if icon.IconURL == recommended {
+			found = true
+			break
+		}
+	}
+	if !found {
 		recommended = icons[0].IconURL
 	}
 
@@ -91,7 +131,7 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req DownloadRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid JSON body"})
 		return
 	}
@@ -103,27 +143,31 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "format is required"})
 		return
 	}
+	if err := h.signer.Verify(req.IconURL, req.Token); err != nil {
+		writeJSON(w, http.StatusForbidden, errorResponse{Error: security.PublicError(err)})
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
 	resp, err := h.downloadSource(ctx, req.IconURL)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, errorResponse{Error: err.Error()})
+		writeJSON(w, http.StatusBadGateway, errorResponse{Error: security.PublicError(err)})
 		return
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := security.LimitedReadAll(resp.Body, security.MaxIconBody)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, errorResponse{Error: fmt.Sprintf("read icon body: %v", err)})
+		writeJSON(w, http.StatusBadGateway, errorResponse{Error: security.PublicError(err)})
 		return
 	}
 
 	filename := sourceFilename(req.IconURL)
 	converted, err := convert.Convert(body, resp.Header.Get("Content-Type"), filename, req.Format)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: security.PublicError(err)})
 		return
 	}
 
@@ -134,9 +178,9 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) downloadSource(ctx context.Context, iconURL string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, iconURL, nil)
+	req, err := security.NewRequestWithPolicy(ctx, http.MethodGet, iconURL, h.policy)
 	if err != nil {
-		return nil, fmt.Errorf("build icon request: %w", err)
+		return nil, err
 	}
 	resp, err := h.client.Do(req)
 	if err != nil {
@@ -151,31 +195,49 @@ func (h *Handler) downloadSource(ctx context.Context, iconURL string) (*http.Res
 
 func sourceFilename(iconURL string) string {
 	base := path.Base(iconURL)
+	if i := strings.IndexAny(base, "?#"); i >= 0 {
+		base = base[:i]
+	}
 	if base == "." || base == "/" || base == "" {
-		return "icon"
-	}
-	if strings.Contains(base, "?") {
-		base = strings.Split(base, "?")[0]
-	}
-	if base == "" {
 		return "icon"
 	}
 	return base
 }
 
 func detectContentTypeFromURL(raw string) string {
-	switch strings.ToLower(path.Ext(raw)) {
-	case ".png":
+	lower := strings.ToLower(raw)
+	if i := strings.IndexAny(lower, "?#"); i >= 0 {
+		lower = lower[:i]
+	}
+	switch {
+	case strings.HasSuffix(lower, ".png"):
 		return "image/png"
-	case ".jpg", ".jpeg":
+	case strings.HasSuffix(lower, ".jpg"), strings.HasSuffix(lower, ".jpeg"):
 		return "image/jpeg"
-	case ".svg":
+	case strings.HasSuffix(lower, ".svg"):
 		return "image/svg+xml"
-	case ".ico":
+	case strings.HasSuffix(lower, ".ico"):
 		return "image/x-icon"
+	case strings.HasSuffix(lower, ".gif"):
+		return "image/gif"
+	case strings.HasSuffix(lower, ".webp"):
+		return "image/webp"
 	default:
 		return ""
 	}
+}
+
+func decodeJSONBody(r *http.Request, dst any) error {
+	defer r.Body.Close()
+	limited := io.LimitReader(r.Body, security.MaxJSONBody+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return err
+	}
+	if int64(len(data)) > security.MaxJSONBody {
+		return fmt.Errorf("request body too large")
+	}
+	return json.Unmarshal(data, dst)
 }
 
 func methodNotAllowed(w http.ResponseWriter) {

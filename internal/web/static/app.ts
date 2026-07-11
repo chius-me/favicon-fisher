@@ -7,6 +7,7 @@ interface PreviewPayload {
 
 interface IconInfo {
   icon_url: string;
+  token: string;
   source_rel: string;
   sizes: string | null;
   content_type: string;
@@ -41,13 +42,14 @@ form.addEventListener('submit', async (event: Event) => {
       body: JSON.stringify({ url }),
     });
 
-    const payload: PreviewPayload = await response.json();
+    const payload = (await response.json()) as PreviewPayload & { error?: string };
     if (!response.ok) {
-      throw new Error((payload as { error?: string }).error || 'Preview failed');
+      throw new Error(payload.error || 'Preview failed');
     }
 
     previewState = payload;
-    selectedIcon = payload.icons.find((i) => i.icon_url === payload.recommended_icon_url) || payload.icons[0];
+    selectedIcon =
+      payload.icons.find((i) => i.icon_url === payload.recommended_icon_url) || payload.icons[0];
     renderPreview();
     setStatus(`Found ${payload.icons.length} icon candidate(s).`, false);
     resultsEl.classList.remove('hidden');
@@ -71,12 +73,13 @@ downloadBtn.addEventListener('click', async () => {
       body: JSON.stringify({
         icon_url: selectedIcon.icon_url,
         format: formatEl.value,
+        token: selectedIcon.token,
       }),
     });
 
     if (!response.ok) {
-      const payload = await response.json();
-      throw new Error((payload as { error?: string }).error || 'Download failed');
+      const payload = (await response.json()) as { error?: string };
+      throw new Error(payload.error || 'Download failed');
     }
 
     const blob = await response.blob();
@@ -103,20 +106,32 @@ function renderPreview(): void {
   if (!previewState || !selectedIcon) return;
 
   heroIconEl.src = selectedIcon.icon_url;
-  heroIconEl.alt = selectedIcon.icon_url;
+  heroIconEl.alt = 'Selected favicon preview';
   pageUrlEl.textContent = previewState.page_url;
   selectedUrlEl.textContent = selectedIcon.icon_url;
 
-  iconListEl.innerHTML = '';
+  while (iconListEl.firstChild) {
+    iconListEl.removeChild(iconListEl.firstChild);
+  }
+
   previewState.icons.forEach((icon: IconInfo) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `icon-item ${icon.icon_url === selectedIcon!.icon_url ? 'active' : ''}`;
-    button.innerHTML = `
-      <img src="${icon.icon_url}" alt="${icon.source_rel}">
-      <span>${icon.source_rel}</span>
-      <small>${icon.sizes || 'unknown size'}</small>
-    `;
+
+    const img = document.createElement('img');
+    img.src = icon.icon_url;
+    img.alt = icon.source_rel || 'icon';
+
+    const span = document.createElement('span');
+    span.textContent = icon.source_rel || 'icon';
+
+    const small = document.createElement('small');
+    small.textContent = icon.sizes || 'unknown size';
+
+    button.appendChild(img);
+    button.appendChild(span);
+    button.appendChild(small);
     button.addEventListener('click', () => {
       selectedIcon = icon;
       renderPreview();
@@ -124,7 +139,9 @@ function renderPreview(): void {
     iconListEl.appendChild(button);
   });
 
-  formatEl.innerHTML = '';
+  while (formatEl.firstChild) {
+    formatEl.removeChild(formatEl.firstChild);
+  }
   selectedIcon.allowed_types.forEach((format: string) => {
     const option = document.createElement('option');
     option.value = format;

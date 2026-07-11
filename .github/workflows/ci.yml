@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  test-go:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -19,5 +19,31 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Vet
+        run: go vet ./...
+
       - name: Run test suite
         run: go test ./...
+
+      - name: Race detector
+        run: go test -race ./...
+
+  check-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build

@@ -8,6 +8,7 @@ type PreviewRequest struct {
 
 type IconPreview struct {
 	IconURL      string   `json:"icon_url"`
+	Token        string   `json:"token"`
 	SourceRel    string   `json:"source_rel"`
 	Sizes        string   `json:"sizes,omitempty"`
 	ContentType  string   `json:"content_type,omitempty"`
@@ -24,6 +25,7 @@ type PreviewResponse struct {
 type DownloadRequest struct {
 	IconURL string `json:"icon_url"`
 	Format  string `json:"format"`
+	Token   string `json:"token"`
 }
 
 type errorResponse struct {
@@ -32,9 +34,13 @@ type errorResponse struct {
 
 func allowedTypesFor(iconURL string, contentType string) []string {
 	urlLower := strings.ToLower(iconURL)
+	// strip query for extension checks
+	if i := strings.IndexAny(urlLower, "?#"); i >= 0 {
+		urlLower = urlLower[:i]
+	}
 	contentLower := strings.ToLower(contentType)
 
-	if strings.HasSuffix(urlLower, ".svg") || strings.Contains(contentLower, "image/svg+xml") {
+	if strings.HasSuffix(urlLower, ".svg") || strings.Contains(contentLower, "image/svg+xml") || strings.Contains(contentLower, "svg") {
 		return []string{"svg"}
 	}
 	if strings.HasSuffix(urlLower, ".ico") || strings.Contains(contentLower, "image/x-icon") || strings.Contains(contentLower, "image/vnd.microsoft.icon") {
@@ -49,5 +55,12 @@ func allowedTypesFor(iconURL string, contentType string) []string {
 	if strings.HasSuffix(urlLower, ".gif") || strings.Contains(contentLower, "image/gif") {
 		return []string{"png", "jpg"}
 	}
-	return nil
+	if strings.HasSuffix(urlLower, ".webp") || strings.Contains(contentLower, "image/webp") {
+		return []string{"png", "jpg"}
+	}
+	// Extensionless CDN URLs / unknown: allow common raster conversions.
+	if contentLower == "" || strings.Contains(contentLower, "octet-stream") || strings.Contains(contentLower, "image/") {
+		return []string{"png", "jpg"}
+	}
+	return []string{"png", "jpg"}
 }

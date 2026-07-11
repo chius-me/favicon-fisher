@@ -3,7 +3,6 @@ package fetcher
 import (
 	"context"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -11,16 +10,26 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/chius-me/favicon-fisher/internal/security"
 )
 
 func DownloadIcon(ctx context.Context, client *http.Client, iconURL string, outputDir string, sizeHint string, relHint string) (IconResult, error) {
+	return DownloadIconWithPolicy(ctx, client, security.CLIPolicy, iconURL, outputDir, sizeHint, relHint)
+}
+
+func DownloadIconWithPolicy(ctx context.Context, client *http.Client, policy security.Policy, iconURL string, outputDir string, sizeHint string, relHint string) (IconResult, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = security.SafeHTTPClient(security.ClientOptions{
+			Timeout: 15 * time.Second,
+			Policy:  policy,
+		})
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, iconURL, nil)
+	req, err := security.NewRequestWithPolicy(ctx, http.MethodGet, iconURL, policy)
 	if err != nil {
-		return IconResult{}, fmt.Errorf("build icon request: %w", err)
+		return IconResult{}, err
 	}
 
 	resp, err := client.Do(req)
@@ -39,15 +48,14 @@ func DownloadIcon(ctx context.Context, client *http.Client, iconURL string, outp
 	}
 
 	ext := inferExtension(parsedURL.Path, resp.Header.Get("Content-Type"))
-	
-	// Create suffix based on size and rel to avoid conflicts when downloading all
+
 	suffix := ""
 	if sizeHint != "" {
 		suffix = "-" + strings.ReplaceAll(sizeHint, " ", "-")
 	} else if relHint != "" && relHint != "icon" && relHint != "shortcut icon" {
 		suffix = "-" + strings.ReplaceAll(relHint, " ", "-")
 	}
-	
+
 	filename := safeFilename(parsedURL.Hostname()+suffix, ext)
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return IconResult{}, fmt.Errorf("create output dir: %w", err)
@@ -60,8 +68,9 @@ func DownloadIcon(ctx context.Context, client *http.Client, iconURL string, outp
 	}
 	defer file.Close()
 
-	written, err := io.Copy(file, resp.Body)
+	written, err := security.CopyLimited(file, resp.Body, security.MaxIconBody)
 	if err != nil {
+		_ = os.Remove(outputPath)
 		return IconResult{}, fmt.Errorf("write output file: %w", err)
 	}
 
@@ -79,7 +88,7 @@ func DownloadIcon(ctx context.Context, client *http.Client, iconURL string, outp
 
 func inferExtension(urlPath string, contentType string) string {
 	ext := strings.ToLower(path.Ext(urlPath))
-	if ext != "" {
+	if ext != "" && len(ext) <= 5 {
 		return ext
 	}
 
@@ -96,6 +105,8 @@ func inferExtension(urlPath string, contentType string) string {
 			return ".jpg"
 		case "image/webp":
 			return ".webp"
+		case "image/gif":
+			return ".gif"
 		}
 	}
 
@@ -107,6 +118,26 @@ func safeFilename(host string, ext string) string {
 	if host == "" {
 		host = "favicon"
 	}
-	replacer := strings.NewReplacer(":", "-", "/", "-", "\\", "-", " ", "-")
-	return replacer.Replace(host) + ext
+	replacer := strings.NewReplacer(
+		":", "-", "/", "-", "\\", "-", " ", "-",
+		"..", ".", "\x00", "",
+	)
+	name := replacer.Replace(host)
+	name = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			return '-'
+		}
+		return r
+	}, name)
+	if name == "" || name == "." || name == ".." {
+		name = "favicon"
+	}
+	if len(name) > 180 {
+		name = name[:180]
+	}
+	return name + ext
 }

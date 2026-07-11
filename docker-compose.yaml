@@ -10,4 +10,13 @@ services:
       - "${PORT:-8080}:8080"
     environment:
       PORT: "8080"
+      # Required for stable download tokens across restarts when exposing the API.
+      FVF_SIGNING_SECRET: "${FVF_SIGNING_SECRET:-}"
+      # Never set to 1 on the public internet.
+      FVF_ALLOW_PRIVATE: "${FVF_ALLOW_PRIVATE:-0}"
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp

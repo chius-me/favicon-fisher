@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/chius-me/favicon-fisher/internal/fetcher"
+	"github.com/chius-me/favicon-fisher/internal/security"
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 )
@@ -29,23 +30,21 @@ func main() {
 		Long:  `favicon-fisher (fvf) helps you easily extract and download the best favicon from any website.`,
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var url string
+			var target string
 			if len(args) == 0 {
-				// Interactive mode if no URL is provided
 				if jsonOnly {
 					return fmt.Errorf("URL is required when using --json")
 				}
 				pterm.DefaultBasicText.Println(pterm.LightCyan("Welcome to favicon-fisher (fvf)! 🎣"))
 				pterm.DefaultBasicText.Println("Please enter the website URL you want to fetch the favicon from:")
 				fmt.Print("URL > ")
-				fmt.Scanln(&url)
-				if url == "" {
+				if _, err := fmt.Scanln(&target); err != nil || target == "" {
 					return fmt.Errorf("URL cannot be empty")
 				}
 			} else {
-				url = args[0]
+				target = args[0]
 			}
-			return runFetch(cmd.Context(), url, outputDir, jsonOnly, fetchAll, proxyURL)
+			return runFetch(cmd.Context(), target, outputDir, jsonOnly, fetchAll, proxyURL)
 		},
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -56,14 +55,13 @@ func main() {
 	rootCmd.Flags().BoolVar(&fetchAll, "all", false, "download all discovered favicon candidates, not just the best one")
 	rootCmd.Flags().StringVar(&proxyURL, "proxy", "", "HTTP proxy URL (e.g. http://127.0.0.1:8080). Also respects HTTP_PROXY/HTTPS_PROXY env vars")
 
-	// Disable default completion command
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	if err := rootCmd.Execute(); err != nil {
 		if !jsonOnly {
 			pterm.Error.Println(err.Error())
 		} else {
-			fmt.Fprintf(os.Stderr, `{"error": "%v"}`+"\n", err)
+			_ = json.NewEncoder(os.Stderr).Encode(map[string]string{"error": err.Error()})
 		}
 		os.Exit(1)
 	}
@@ -84,13 +82,15 @@ func runFetch(ctx context.Context, rawURL string, outputDir string, jsonOnly boo
 		transport.Proxy = http.ProxyURL(pURL)
 	}
 
-	client := &http.Client{
+	// CLI allows private targets (local dev servers). Still enforces http(s) + body limits.
+	client := security.SafeHTTPClient(security.ClientOptions{
 		Timeout:   15 * time.Second,
 		Transport: transport,
-	}
-	
-	result, err := fetcher.New(client).Fetch(ctx, rawURL, outputDir, fetchAll)
-	
+		Policy:    security.CLIPolicy,
+	})
+
+	result, err := fetcher.NewWithPolicy(client, security.CLIPolicy).Fetch(ctx, rawURL, outputDir, fetchAll)
+
 	if err != nil {
 		if spinner != nil {
 			spinner.Fail("Failed to catch the favicon!")
@@ -133,6 +133,6 @@ func runFetch(ctx context.Context, rawURL string, outputDir string, jsonOnly boo
 		)
 		pterm.Print(panel)
 	}
-	
+
 	return nil
 }

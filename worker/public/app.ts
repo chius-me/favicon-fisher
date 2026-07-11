@@ -7,6 +7,7 @@ interface PreviewPayload {
 
 interface IconInfo {
   icon_url: string;
+  token: string;
   source_rel: string;
   sizes: string | null;
   content_type: string;
@@ -26,7 +27,6 @@ const previewBtn = document.getElementById('preview-btn') as HTMLButtonElement;
 
 let previewState: PreviewPayload | null = null;
 let selectedIcon: IconInfo | null = null;
-// Cache: icon_url → ArrayBuffer (raw binary from proxy)
 const iconCache = new Map<string, ArrayBuffer>();
 
 form.addEventListener('submit', async (event: Event) => {
@@ -43,9 +43,9 @@ form.addEventListener('submit', async (event: Event) => {
       body: JSON.stringify({ url }),
     });
 
-    const payload: PreviewPayload = await response.json();
+    const payload = (await response.json()) as PreviewPayload & { error?: string };
     if (!response.ok) {
-      throw new Error((payload as { error?: string }).error || 'Preview failed');
+      throw new Error(payload.error || 'Preview failed');
     }
 
     if (!payload.icons || payload.icons.length === 0) {
@@ -53,7 +53,8 @@ form.addEventListener('submit', async (event: Event) => {
     }
 
     previewState = payload;
-    selectedIcon = payload.icons.find((i) => i.icon_url === payload.recommended_icon_url) || payload.icons[0];
+    selectedIcon =
+      payload.icons.find((i) => i.icon_url === payload.recommended_icon_url) || payload.icons[0];
     renderPreview();
     setStatus(`Found ${payload.icons.length} icon candidate(s).`, false);
     resultsEl.classList.remove('hidden');
@@ -72,7 +73,7 @@ downloadBtn.addEventListener('click', async () => {
 
   try {
     const fmt = formatEl.value;
-    const buf = await fetchIconBuffer(selectedIcon.icon_url);
+    const buf = await fetchIconBuffer(selectedIcon);
     const ct = selectedIcon.content_type || '';
     const isSvg = ct.includes('svg') || selectedIcon.icon_url.endsWith('.svg');
     const isIco = ct.includes('icon') || selectedIcon.icon_url.endsWith('.ico');
@@ -80,14 +81,11 @@ downloadBtn.addEventListener('click', async () => {
     let blob: Blob | null;
 
     if (fmt === 'svg' && isSvg) {
-      // SVG passthrough
       blob = new Blob([buf], { type: 'image/svg+xml' });
     } else if (fmt === 'ico' && isIco) {
-      // ICO passthrough
       blob = new Blob([buf], { type: 'image/x-icon' });
     } else {
-      // Raster conversion via Canvas
-      blob = await convertViaCanvas(selectedIcon.icon_url, fmt, buf, ct);
+      blob = await convertViaCanvas(selectedIcon, fmt);
     }
 
     if (!blob) throw new Error('Conversion failed');
@@ -103,26 +101,36 @@ downloadBtn.addEventListener('click', async () => {
   }
 });
 
-// ─── Rendering ─────────────────────────────────────────────────────
-
 function renderPreview(): void {
   if (!previewState || !selectedIcon) return;
 
-  // Use proxy for preview to avoid CORS issues
-  heroIconEl.src = proxyUrl(selectedIcon.icon_url);
+  heroIconEl.src = proxyUrl(selectedIcon);
+  heroIconEl.alt = 'Selected favicon preview';
   pageUrlEl.textContent = previewState.page_url;
   selectedUrlEl.textContent = selectedIcon.icon_url;
 
-  iconListEl.innerHTML = '';
+  while (iconListEl.firstChild) {
+    iconListEl.removeChild(iconListEl.firstChild);
+  }
+
   previewState.icons.forEach((icon: IconInfo) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `icon-item ${icon.icon_url === selectedIcon!.icon_url ? 'active' : ''}`;
-    button.innerHTML = `
-      <img src="${proxyUrl(icon.icon_url)}" alt="${icon.source_rel}">
-      <span>${icon.source_rel}</span>
-      <small>${icon.sizes || guessSizeFromUrl(icon.icon_url)}</small>
-    `;
+
+    const img = document.createElement('img');
+    img.src = proxyUrl(icon);
+    img.alt = icon.source_rel || 'icon';
+
+    const span = document.createElement('span');
+    span.textContent = icon.source_rel || 'icon';
+
+    const small = document.createElement('small');
+    small.textContent = icon.sizes || guessSizeFromUrl(icon.icon_url) || 'unknown size';
+
+    button.appendChild(img);
+    button.appendChild(span);
+    button.appendChild(small);
     button.addEventListener('click', () => {
       selectedIcon = icon;
       renderPreview();
@@ -130,7 +138,9 @@ function renderPreview(): void {
     iconListEl.appendChild(button);
   });
 
-  formatEl.innerHTML = '';
+  while (formatEl.firstChild) {
+    formatEl.removeChild(formatEl.firstChild);
+  }
   selectedIcon.allowed_types.forEach((fmt: string) => {
     const option = document.createElement('option');
     option.value = fmt;
@@ -139,27 +149,23 @@ function renderPreview(): void {
   });
 }
 
-// ─── Icon fetching ─────────────────────────────────────────────────
-
-async function fetchIconBuffer(iconUrl: string): Promise<ArrayBuffer> {
-  if (iconCache.has(iconUrl)) return iconCache.get(iconUrl)!;
-  const resp = await fetch(proxyUrl(iconUrl));
+async function fetchIconBuffer(icon: IconInfo): Promise<ArrayBuffer> {
+  if (iconCache.has(icon.icon_url)) return iconCache.get(icon.icon_url)!;
+  const resp = await fetch(proxyUrl(icon));
   if (!resp.ok) throw new Error(`Failed to fetch icon: ${resp.status}`);
   const buf = await resp.arrayBuffer();
-  iconCache.set(iconUrl, buf);
+  iconCache.set(icon.icon_url, buf);
   return buf;
 }
 
-function proxyUrl(iconUrl: string): string {
-  return `/api/proxy?url=${encodeURIComponent(iconUrl)}`;
+function proxyUrl(icon: IconInfo): string {
+  return `/api/proxy?url=${encodeURIComponent(icon.icon_url)}&token=${encodeURIComponent(icon.token)}`;
 }
 
-// ─── Canvas-based format conversion ────────────────────────────────
-
-async function convertViaCanvas(iconUrl: string, targetFmt: string, buffer: ArrayBuffer, contentType: string): Promise<Blob | null> {
+async function convertViaCanvas(icon: IconInfo, targetFmt: string): Promise<Blob | null> {
   const img = new Image();
   img.crossOrigin = 'anonymous';
-  img.src = proxyUrl(iconUrl);
+  img.src = proxyUrl(icon);
 
   await new Promise<void>((resolve, reject) => {
     img.onload = () => resolve();
@@ -172,7 +178,6 @@ async function convertViaCanvas(iconUrl: string, targetFmt: string, buffer: Arra
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
 
-  // White background for formats without transparency
   if (targetFmt === 'jpg' || targetFmt === 'jpeg') {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, size, size);
@@ -189,7 +194,6 @@ async function convertViaCanvas(iconUrl: string, targetFmt: string, buffer: Arra
     case 'webp':
       return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/webp', 0.92));
     case 'ico': {
-      // ICO: generate PNG and wrap in ICO format (single 32-bit entry)
       const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
       const pngBuf = new Uint8Array(await pngBlob!.arrayBuffer());
       const ico = buildIco(pngBuf, size);
@@ -200,7 +204,6 @@ async function convertViaCanvas(iconUrl: string, targetFmt: string, buffer: Arra
   }
 }
 
-// Minimal ICO wrapper: one PNG entry
 function buildIco(pngData: Uint8Array, size: number): ArrayBuffer {
   const headerSize = 6;
   const dirSize = 16;
@@ -208,31 +211,24 @@ function buildIco(pngData: Uint8Array, size: number): ArrayBuffer {
   const buf = new ArrayBuffer(dataOffset + pngData.length);
   const view = new DataView(buf);
 
-  // ICO header
-  view.setUint16(0, 0, true);    // reserved
-  view.setUint16(2, 1, true);    // type: 1 = ICO
-  view.setUint16(4, 1, true);    // count: 1 image
+  view.setUint16(0, 0, true);
+  view.setUint16(2, 1, true);
+  view.setUint16(4, 1, true);
 
-  // Directory entry
-  view.setUint8(6, size >= 256 ? 0 : size);  // width (0 = 256+)
-  view.setUint8(7, size >= 256 ? 0 : size);  // height
-  view.setUint8(8, 0);           // color palette
-  view.setUint8(9, 0);           // reserved
-  view.setUint16(10, 1, true);   // color planes
-  view.setUint16(12, 32, true);  // bits per pixel
-  view.setUint32(14, pngData.length, true);  // image size
-  view.setUint32(18, dataOffset, true);       // image offset
+  view.setUint8(6, size >= 256 ? 0 : size);
+  view.setUint8(7, size >= 256 ? 0 : size);
+  view.setUint8(8, 0);
+  view.setUint8(9, 0);
+  view.setUint16(10, 1, true);
+  view.setUint16(12, 32, true);
+  view.setUint32(14, pngData.length, true);
+  view.setUint32(18, dataOffset, true);
 
-  // PNG data
   new Uint8Array(buf).set(pngData, dataOffset);
-
   return buf;
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────
-
 function guessSizeFromUrl(url: string): string {
-  // Try to extract size from URL like "favicon-32x32.png"
   const m = url.match(/[-_](\d+)x(\d+)/i);
   return m ? `${m[1]}x${m[2]}` : '';
 }

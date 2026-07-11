@@ -161,9 +161,11 @@ docker run --rm -p 8080:8080 ghcr.io/chius-me/favicon-fisher:v1.0.1
 
 Go Web UI 和 Worker 共用预览接口。下载流程不同，因为 Worker 在浏览器中完成转换。
 
+下载与代理接口需要 preview 返回的短期 **HMAC token**（防止开放代理滥用）。
+
 ### `POST /api/preview`
 
-发现指定 URL 的 favicon 候选列表。`fvf-web` 会过滤掉无法下载的候选项，Worker 返回浏览器可转换的候选项。
+发现指定 URL 的 favicon 候选（HTML link、Web Manifest、`/favicon.ico`）。无扩展名的 CDN 地址会在需要时探测 `Content-Type`。
 
 ```json
 {
@@ -181,6 +183,7 @@ Go Web UI 和 Worker 共用预览接口。下载流程不同，因为 Worker 在
   "icons": [
     {
       "icon_url": "https://github.githubassets.com/favicons/favicon.svg",
+      "token": "<hmac-token>",
       "source_rel": "icon",
       "content_type": "image/svg+xml",
       "allowed_types": ["svg"]
@@ -191,18 +194,42 @@ Go Web UI 和 Worker 共用预览接口。下载流程不同，因为 Worker 在
 
 ### `POST /api/download`（fvf-web）
 
-从 Go Web UI 下载指定格式的图标。响应体是二进制文件。
+下载指定格式的图标，必须携带 preview 返回的 `token`。响应体为二进制文件。
 
 ```json
 {
   "icon_url": "https://github.githubassets.com/favicons/favicon.svg",
-  "format": "png"
+  "format": "png",
+  "token": "<hmac-token>"
 }
 ```
 
-### `GET /api/proxy?url=<icon_url>`（Worker）
+### `GET /api/proxy?url=<icon_url>&token=<hmac-token>`（Worker）
 
-通过 Worker 代理图标下载，帮助浏览器绕过远端 CORS 限制。
+通过 Worker 代理图标下载，帮助浏览器绕过远端 CORS。`token` 必填。
+
+## 安全
+
+`fvf-web` 与 Worker 会在服务端代发 HTTP 请求。公网部署默认启用以下控制：
+
+| 控制 | 行为 |
+|---|---|
+| **SSRF 防护** | 仅允许 `http`/`https`；拦截私网、环回、链路本地、CGNAT 与元数据类目标；重定向逐跳校验 |
+| **签名 token** | `/api/download` 与 `/api/proxy` 需要 preview 签发的 HMAC token（有效期 15 分钟） |
+| **体积限制** | HTML ≤ 5 MiB，图标 ≤ 5 MiB，manifest ≤ 1 MiB，JSON 请求 ≤ 64 KiB |
+| **限流** | 每个客户端 IP 每分钟约 60 次 API 请求（尽力而为） |
+| **安全响应头** | `X-Content-Type-Options`、`CSP`、`X-Frame-Options`、`Referrer-Policy` |
+| **错误脱敏** | 不向客户端泄露拨号/DNS 等内部细节 |
+
+环境变量：
+
+| 变量 | 适用 | 说明 |
+|---|---|---|
+| `FVF_SIGNING_SECRET` | Web + Worker | 下载/代理 token 的 HMAC 密钥；生产环境请设置稳定值 |
+| `FVF_ALLOW_PRIVATE` | Web + Worker | 仅在受信任内网设为 `1`；**切勿**在公网开启 |
+| `PORT` | Web | 监听端口（默认 `8080`） |
+
+**CLI** 允许访问本机/内网目标（方便本地开发），但仍强制 `http`/`https`、User-Agent、超时与体积上限。
 
 ## Cloudflare Worker
 
@@ -211,6 +238,7 @@ Worker 版本提供相同风格的 UI、静态资源和 TypeScript Worker API。
 ```bash
 cd worker
 npm install
+npx wrangler secret put FVF_SIGNING_SECRET
 npx wrangler deploy
 ```
 
@@ -228,6 +256,7 @@ go build ./cmd/fvf ./cmd/fvf-web
 
 ```bash
 go test ./...
+go test -race ./...
 ```
 
 运行 Worker 检查：
@@ -236,7 +265,10 @@ go test ./...
 cd worker
 npm install
 npm run check
+npm run build
 ```
+
+共享发现夹具位于 `testdata/golden/`。
 
 ## 项目结构
 
@@ -246,8 +278,10 @@ npm run check
 | `cmd/fvf-web/` | Web 服务入口 |
 | `internal/fetcher/` | 核心发现、排序与下载逻辑 |
 | `internal/convert/` | 格式转换（Go 图像处理） |
+| `internal/security/` | SSRF、签名、限流、响应头、体积限制 |
 | `internal/web/` | API 处理器与内嵌静态资源 |
 | `worker/` | Cloudflare Workers 变体（TypeScript，零服务端处理） |
+| `testdata/golden/` | 共享 HTML/manifest 发现测试夹具 |
 
 ## 补充说明
 
@@ -255,6 +289,7 @@ npm run check
 - `fvf-web` 的 ICO 输出为直通模式，要求源图标为 ICO。
 - Worker 版在浏览器中将 PNG 字节包装为最小 ICO 容器来生成 ICO 输出。
 - CLI 和 Web 请求对慢速服务器使用 15 秒超时。
+- Docker 镜像以非 root（`65532`）运行；Compose 启用只读根文件系统并挂载 `/tmp` tmpfs。
 
 ## 许可证
 
