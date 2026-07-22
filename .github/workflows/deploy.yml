@@ -28,9 +28,20 @@ jobs:
 
       - run: npm run build
 
+      # Fail closed: never deploy a Worker that falls back to an insecure signing key.
+      - name: Require FVF_SIGNING_SECRET
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          secrets="$(npx wrangler secret list --format json 2>/dev/null || npx wrangler secret list)"
+          echo "$secrets" | grep -q 'FVF_SIGNING_SECRET' || {
+            echo "::error::FVF_SIGNING_SECRET is not set on the Worker. Run: npx wrangler secret put FVF_SIGNING_SECRET"
+            exit 1
+          }
+
       - run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Set in Cloudflare dashboard or as a Wrangler secret:
-          # npx wrangler secret put FVF_SIGNING_SECRET

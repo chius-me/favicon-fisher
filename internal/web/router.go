@@ -17,6 +17,7 @@ func NewMuxWithLimiter(handler *Handler, staticFS http.FileSystem, limiter *secu
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/preview", handler.Preview)
 	mux.HandleFunc("/api/download", handler.Download)
+	mux.HandleFunc("/api/proxy", handler.Proxy)
 	mux.Handle("/", http.FileServer(staticFS))
 
 	var h http.Handler = mux

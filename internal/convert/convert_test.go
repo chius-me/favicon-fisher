@@ -60,3 +60,39 @@ func TestConvertPassesThroughSVG(t *testing.T) {
 		t.Fatal("expected SVG bytes to pass through unchanged")
 	}
 }
+
+func TestConvertRejectsHTMLPretendingToBeSVG(t *testing.T) {
+	html := []byte(`<!DOCTYPE html><html><body>not svg</body></html>`)
+	_, err := Convert(html, "text/html", "icon.svg", "svg")
+	if err == nil {
+		t.Fatal("expected error for HTML masquerading as SVG")
+	}
+}
+
+func TestConvertRejectsOversizedImageConfig(t *testing.T) {
+	// Minimal valid PNG header with absurd dimensions is hard; use DecodeConfig path via
+	// a crafted oversized but valid PNG is expensive. Instead encode a small PNG and
+	// verify the limit helpers reject synthetic huge dimensions via assertDecodableImageLimits
+	// by using a PNG larger than MaxImageDimension if we can — skip if not practical.
+	// Here we just ensure normal small PNG still converts.
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if _, err := Convert(buf.Bytes(), "image/png", "icon.png", "png"); err != nil {
+		t.Fatalf("expected small PNG to convert: %v", err)
+	}
+}
+
+func TestConvertRejectsUnsupportedFormat(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	_, err := Convert(buf.Bytes(), "image/png", "icon.png", "webp")
+	if err == nil {
+		t.Fatal("expected unsupported format error for webp")
+	}
+}

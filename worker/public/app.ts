@@ -106,6 +106,10 @@ function renderPreview(): void {
 
   heroIconEl.src = proxyUrl(selectedIcon);
   heroIconEl.alt = 'Selected favicon preview';
+  heroIconEl.onerror = () => {
+    heroIconEl.removeAttribute('src');
+    heroIconEl.alt = 'Preview unavailable';
+  };
   pageUrlEl.textContent = previewState.page_url;
   selectedUrlEl.textContent = selectedIcon.icon_url;
 
@@ -116,11 +120,17 @@ function renderPreview(): void {
   previewState.icons.forEach((icon: IconInfo) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `icon-item ${icon.icon_url === selectedIcon!.icon_url ? 'active' : ''}`;
+    const isActive = icon.icon_url === selectedIcon!.icon_url;
+    button.className = `icon-item ${isActive ? 'active' : ''}`;
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
 
     const img = document.createElement('img');
     img.src = proxyUrl(icon);
     img.alt = icon.source_rel || 'icon';
+    img.onerror = () => {
+      img.alt = 'unavailable';
+      img.style.opacity = '0.3';
+    };
 
     const span = document.createElement('span');
     span.textContent = icon.source_rel || 'icon';
@@ -162,6 +172,9 @@ function proxyUrl(icon: IconInfo): string {
   return `/api/proxy?url=${encodeURIComponent(icon.icon_url)}&token=${encodeURIComponent(icon.token)}`;
 }
 
+const MAX_CANVAS_SIZE = 1024;
+const MAX_SOURCE_PIXELS = 16_000_000;
+
 async function convertViaCanvas(icon: IconInfo, targetFmt: string): Promise<Blob | null> {
   const img = new Image();
   img.crossOrigin = 'anonymous';
@@ -172,7 +185,16 @@ async function convertViaCanvas(icon: IconInfo, targetFmt: string): Promise<Blob
     img.onerror = () => reject(new Error('Failed to load icon image'));
   });
 
-  const size = Math.max(img.naturalWidth, img.naturalHeight, 16);
+  const naturalW = img.naturalWidth || 0;
+  const naturalH = img.naturalHeight || 0;
+  if (naturalW <= 0 || naturalH <= 0) {
+    throw new Error('Invalid image dimensions');
+  }
+  if (naturalW * naturalH > MAX_SOURCE_PIXELS) {
+    throw new Error('Image dimensions exceed limits');
+  }
+
+  const size = Math.min(Math.max(naturalW, naturalH, 16), MAX_CANVAS_SIZE);
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -183,7 +205,13 @@ async function convertViaCanvas(icon: IconInfo, targetFmt: string): Promise<Blob
     ctx.fillRect(0, 0, size, size);
   }
 
-  ctx.drawImage(img, 0, 0, size, size);
+  // Scale down oversized sources into the canvas bound.
+  const scale = Math.min(size / naturalW, size / naturalH, 1);
+  const dw = Math.max(1, Math.round(naturalW * scale));
+  const dh = Math.max(1, Math.round(naturalH * scale));
+  const dx = Math.floor((size - dw) / 2);
+  const dy = Math.floor((size - dh) / 2);
+  ctx.drawImage(img, dx, dy, dw, dh);
 
   switch (targetFmt) {
     case 'png':

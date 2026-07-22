@@ -146,3 +146,72 @@ func TestFetcherFetchReturnsDiscoveredIconMetadata(t *testing.T) {
 		t.Fatal("expected fallbackUsed to be false")
 	}
 }
+
+func TestFetchFallsBackWhenBestCandidate404(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<html><head>
+				<link rel="icon" href="/broken.png" sizes="32x32">
+				<link rel="apple-touch-icon" href="/ok.png" sizes="180x180">
+			</head></html>`))
+		case "/broken.png":
+			http.NotFound(w, r)
+		case "/ok.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte("ok-png"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	fetcher := New(server.Client())
+	result, err := fetcher.Fetch(context.Background(), server.URL, t.TempDir(), false)
+	if err != nil {
+		t.Fatalf("Fetch should fall back to secondary candidate: %v", err)
+	}
+	if result.IconURL != server.URL+"/ok.png" {
+		t.Fatalf("expected fallback to ok.png, got %q", result.IconURL)
+	}
+}
+
+func TestFetchAllWritesDistinctFiles(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<html><head>
+				<link rel="icon" href="/a.png">
+				<link rel="icon" href="/b.png">
+			</head></html>`))
+		case "/a.png", "/b.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte("png-" + r.URL.Path))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	fetcher := New(server.Client())
+	result, err := fetcher.Fetch(context.Background(), server.URL, dir, true)
+	if err != nil {
+		t.Fatalf("Fetch all: %v", err)
+	}
+	if len(result.AllIcons) < 2 {
+		t.Fatalf("expected at least 2 icons, got %d", len(result.AllIcons))
+	}
+	seen := map[string]bool{}
+	for _, icon := range result.AllIcons {
+		if seen[icon.Filename] {
+			t.Fatalf("duplicate filename %q", icon.Filename)
+		}
+		seen[icon.Filename] = true
+		if _, err := os.Stat(icon.OutputPath); err != nil {
+			t.Fatalf("missing file %s: %v", icon.OutputPath, err)
+		}
+	}
+}

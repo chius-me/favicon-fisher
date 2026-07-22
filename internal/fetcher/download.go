@@ -2,6 +2,8 @@ package fetcher
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"mime"
 	"net/http"
@@ -16,10 +18,10 @@ import (
 )
 
 func DownloadIcon(ctx context.Context, client *http.Client, iconURL string, outputDir string, sizeHint string, relHint string) (IconResult, error) {
-	return DownloadIconWithPolicy(ctx, client, security.CLIPolicy, iconURL, outputDir, sizeHint, relHint)
+	return DownloadIconWithPolicy(ctx, client, security.CLIPolicy, iconURL, outputDir, sizeHint, relHint, 0)
 }
 
-func DownloadIconWithPolicy(ctx context.Context, client *http.Client, policy security.Policy, iconURL string, outputDir string, sizeHint string, relHint string) (IconResult, error) {
+func DownloadIconWithPolicy(ctx context.Context, client *http.Client, policy security.Policy, iconURL string, outputDir string, sizeHint string, relHint string, index int) (IconResult, error) {
 	if client == nil {
 		client = security.SafeHTTPClient(security.ClientOptions{
 			Timeout: 15 * time.Second,
@@ -48,23 +50,30 @@ func DownloadIconWithPolicy(ctx context.Context, client *http.Client, policy sec
 	}
 
 	ext := inferExtension(parsedURL.Path, resp.Header.Get("Content-Type"))
-
-	suffix := ""
-	if sizeHint != "" {
-		suffix = "-" + strings.ReplaceAll(sizeHint, " ", "-")
-	} else if relHint != "" && relHint != "icon" && relHint != "shortcut icon" {
-		suffix = "-" + strings.ReplaceAll(relHint, " ", "-")
-	}
-
-	filename := safeFilename(parsedURL.Hostname()+suffix, ext)
+	filename := uniqueIconFilename(parsedURL.Hostname(), index, parsedURL.Path, sizeHint, relHint, ext)
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return IconResult{}, fmt.Errorf("create output dir: %w", err)
 	}
 
 	outputPath := filepath.Join(outputDir, filename)
-	file, err := os.Create(outputPath)
+	file, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
-		return IconResult{}, fmt.Errorf("create output file: %w", err)
+		// Collision: append short counter until unique.
+		for n := 2; n < 100; n++ {
+			alt := strings.TrimSuffix(filename, ext) + fmt.Sprintf("-%d", n) + ext
+			altPath := filepath.Join(outputDir, alt)
+			f2, err2 := os.OpenFile(altPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+			if err2 == nil {
+				file = f2
+				filename = alt
+				outputPath = altPath
+				err = nil
+				break
+			}
+		}
+		if err != nil {
+			return IconResult{}, fmt.Errorf("create output file: %w", err)
+		}
 	}
 	defer file.Close()
 
@@ -84,6 +93,38 @@ func DownloadIconWithPolicy(ctx context.Context, client *http.Client, policy sec
 		SourceRel:   relHint,
 		Sizes:       sizeHint,
 	}, nil
+}
+
+// uniqueIconFilename builds a non-colliding name:
+// hostname-01-basename-sizeHint-hash.ext
+func uniqueIconFilename(host string, index int, urlPath, sizeHint, relHint, ext string) string {
+	if host == "" {
+		host = "favicon"
+	}
+	base := path.Base(urlPath)
+	if i := strings.IndexAny(base, "?#"); i >= 0 {
+		base = base[:i]
+	}
+	base = strings.TrimSuffix(base, path.Ext(base))
+	if base == "" || base == "." || base == "/" {
+		base = "icon"
+	}
+
+	parts := []string{host}
+	if index > 0 {
+		parts = append(parts, fmt.Sprintf("%02d", index))
+	}
+	parts = append(parts, base)
+	if sizeHint != "" {
+		parts = append(parts, strings.ReplaceAll(sizeHint, " ", "-"))
+	} else if relHint != "" && relHint != "icon" && relHint != "shortcut icon" {
+		parts = append(parts, strings.ReplaceAll(relHint, " ", "-"))
+	}
+	// Short content-addressed suffix from full path keeps same-basename icons distinct.
+	sum := sha256.Sum256([]byte(urlPath))
+	parts = append(parts, hex.EncodeToString(sum[:3]))
+
+	return safeFilename(strings.Join(parts, "-"), ext)
 }
 
 func inferExtension(urlPath string, contentType string) string {

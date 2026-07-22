@@ -15,12 +15,12 @@
       <form id="preview-form" class="stack">
         <label for="url">Website URL</label>
         <div class="row">
-          <input id="url" name="url" type="text" placeholder="https://example.com" required>
+          <input id="url" name="url" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com" required>
           <button type="submit" id="preview-btn">Preview</button>
         </div>
       </form>
 
-      <p id="status" class="status"></p>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
 
       <section id="results" class="results hidden">
         <div class="preview-card">

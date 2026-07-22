@@ -88,8 +88,10 @@ npx wrangler deploy
 
 ## 说明
 
-- 定位是**本地工具**，或需谨慎加固后再公网部署。Web / Worker 会代你抓取远程页面 —— 生产环境请设置 `FVF_SIGNING_SECRET`，且勿在公网放开内网访问。  
-- SVG（以及 Go Web UI 的 ICO）在源已是对应格式时为直通。  
+- 定位是**本地工具**，或需谨慎加固后再公网部署。Web / Worker 会代你抓取远程页面 —— 生产环境请设置 `FVF_SIGNING_SECRET`（Worker **强制要求**；未配置 ≥32 字符密钥时 fail-closed），且勿在公网放开内网访问。  
+- 图标预览一律走同源签名 `/api/proxy`，浏览器不会直接加载远端（或内网）图标 URL。  
+- Go 的 SSRF 在拨号时复验 DNS；Worker 拦截私网 IP 字面量/主机名，并依赖 Cloudflare 出口限制（与 Go 拨号器并非完全等价）。  
+- SVG（以及 Go Web UI 的 ICO）仅在内容确实匹配格式时直通，不会仅信任扩展名。  
 - 更多细节：`./fvf --help`，以及源码目录 `cmd/`、`internal/`、`worker/`。
 
 ## 许可证

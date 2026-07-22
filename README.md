@@ -88,8 +88,10 @@ npx wrangler deploy
 
 ## Notes
 
-- Intended as a **local tool or carefully deployed service**. The Web/Worker modes fetch remote pages on your behalf — set `FVF_SIGNING_SECRET` in production and do not expose private-network access on the public internet.  
-- SVG (and ICO in the Go Web UI) are passthrough when the source is already that format.  
+- Intended as a **local tool or carefully deployed service**. The Web/Worker modes fetch remote pages on your behalf — set `FVF_SIGNING_SECRET` in production (Worker **requires** it; deploy fails closed without a ≥32-char secret) and do not expose private-network access on the public internet.  
+- Icon previews always go through a same-origin signed `/api/proxy` so the browser never loads remote (or private) icon URLs directly.  
+- Go SSRF checks DNS at dial time; Worker SSRF blocks private IP literals / hostnames and relies on Cloudflare’s egress limits (not full DNS rebinding parity).  
+- SVG (and ICO in the Go Web UI) are passthrough only when the payload matches the format (not just the file extension).  
 - More detail: `./fvf --help`, source under `cmd/` / `internal/` / `worker/`.
 
 ## License

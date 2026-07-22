@@ -34,6 +34,7 @@ form.addEventListener('submit', async (event: Event) => {
   setStatus('Loading preview...', false);
   resultsEl.classList.add('hidden');
   previewBtn.disabled = true;
+  form.setAttribute('aria-busy', 'true');
 
   try {
     const response = await fetch('/api/preview', {
@@ -58,6 +59,7 @@ form.addEventListener('submit', async (event: Event) => {
     setStatus(message, true);
   } finally {
     previewBtn.disabled = false;
+    form.removeAttribute('aria-busy');
   }
 });
 
@@ -102,11 +104,19 @@ downloadBtn.addEventListener('click', async () => {
   }
 });
 
+function proxyUrl(icon: IconInfo): string {
+  return `/api/proxy?url=${encodeURIComponent(icon.icon_url)}&token=${encodeURIComponent(icon.token)}`;
+}
+
 function renderPreview(): void {
   if (!previewState || !selectedIcon) return;
 
-  heroIconEl.src = selectedIcon.icon_url;
+  heroIconEl.src = proxyUrl(selectedIcon);
   heroIconEl.alt = 'Selected favicon preview';
+  heroIconEl.onerror = () => {
+    heroIconEl.removeAttribute('src');
+    heroIconEl.alt = 'Preview unavailable';
+  };
   pageUrlEl.textContent = previewState.page_url;
   selectedUrlEl.textContent = selectedIcon.icon_url;
 
@@ -117,11 +127,17 @@ function renderPreview(): void {
   previewState.icons.forEach((icon: IconInfo) => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `icon-item ${icon.icon_url === selectedIcon!.icon_url ? 'active' : ''}`;
+    const isActive = icon.icon_url === selectedIcon!.icon_url;
+    button.className = `icon-item ${isActive ? 'active' : ''}`;
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
 
     const img = document.createElement('img');
-    img.src = icon.icon_url;
+    img.src = proxyUrl(icon);
     img.alt = icon.source_rel || 'icon';
+    img.onerror = () => {
+      img.alt = 'unavailable';
+      img.style.opacity = '0.3';
+    };
 
     const span = document.createElement('span');
     span.textContent = icon.source_rel || 'icon';

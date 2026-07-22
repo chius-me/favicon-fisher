@@ -14,6 +14,22 @@ const (
 	MaxManifestBody int64 = 1 << 20 // 1 MiB
 	// MaxJSONBody is the maximum inbound API JSON request size.
 	MaxJSONBody int64 = 64 << 10 // 64 KiB
+
+	// MaxHTMLIconCandidates caps <link rel=icon…> entries from a single page.
+	MaxHTMLIconCandidates = 32
+	// MaxManifestIcons caps icons[] entries from a web manifest.
+	MaxManifestIcons = 32
+	// MaxTotalCandidates is the hard cap after merge + fallback.
+	MaxTotalCandidates = 48
+	// MaxContentTypeProbes limits HEAD/GET probes during preview.
+	MaxContentTypeProbes = 12
+	// MaxRedirectHops is the maximum number of redirects followed per request.
+	MaxRedirectHops = 5
+
+	// MaxImageDimension is the maximum width or height accepted for decode.
+	MaxImageDimension = 4096
+	// MaxImagePixels is the maximum width×height accepted for decode.
+	MaxImagePixels = 16_000_000
 )
 
 // LimitedReadAll reads at most limit bytes from r and errors if more data is present.

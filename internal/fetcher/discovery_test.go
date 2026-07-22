@@ -1,11 +1,14 @@
 package fetcher
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/chius-me/favicon-fisher/internal/security"
 )
 
 func TestNormalizeInputURLAddsHTTPSWhenMissing(t *testing.T) {
@@ -145,5 +148,63 @@ func TestResolveURLRejectsNonHTTPSchemes(t *testing.T) {
 	}
 	if got := resolveURL(base, "data:text/html,x"); got != "" {
 		t.Fatalf("expected empty for data URL, got %q", got)
+	}
+}
+
+func TestDiscoverCandidatesCapsHTMLIcons(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(`<html><head>`)
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&b, `<link rel="icon" href="/icon-%d.png">`, i)
+	}
+	b.WriteString(`</head></html>`)
+
+	candidates, err := DiscoverCandidates("https://example.com/", strings.NewReader(b.String()))
+	if err != nil {
+		t.Fatalf("DiscoverCandidates: %v", err)
+	}
+	// MaxHTMLIconCandidates + 1 fallback
+	if len(candidates) > security.MaxHTMLIconCandidates+1 {
+		t.Fatalf("expected at most %d candidates, got %d", security.MaxHTMLIconCandidates+1, len(candidates))
+	}
+	htmlIcons := 0
+	for _, c := range candidates {
+		if c.Rel != "fallback" {
+			htmlIcons++
+		}
+	}
+	if htmlIcons > security.MaxHTMLIconCandidates {
+		t.Fatalf("expected at most %d HTML icons, got %d", security.MaxHTMLIconCandidates, htmlIcons)
+	}
+}
+
+func TestSizeScoreCapsHugeDimensions(t *testing.T) {
+	// Should not overflow; huge declared sizes clamp.
+	score := sizeScore("999999x999999")
+	if score <= 0 {
+		t.Fatalf("expected positive score, got %d", score)
+	}
+	// 16384*16384
+	if score > 16384*16384 {
+		t.Fatalf("expected clamped score, got %d", score)
+	}
+}
+
+func TestDiscoverFromHTMLReturnsManifestOnce(t *testing.T) {
+	html := strings.NewReader(`
+		<html><head>
+			<link rel="icon" href="/a.png">
+			<link rel="manifest" href="/site.webmanifest">
+		</head></html>
+	`)
+	result, err := DiscoverFromHTML("https://example.com/", html)
+	if err != nil {
+		t.Fatalf("DiscoverFromHTML: %v", err)
+	}
+	if result.ManifestHref != "/site.webmanifest" {
+		t.Fatalf("expected manifest href, got %q", result.ManifestHref)
+	}
+	if len(result.Candidates) < 2 {
+		t.Fatalf("expected icon + fallback, got %d", len(result.Candidates))
 	}
 }

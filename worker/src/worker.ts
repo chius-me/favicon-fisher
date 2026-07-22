@@ -50,6 +50,13 @@ const MAX_JSON = 64 * 1024;
 const TOKEN_TTL_SEC = 15 * 60;
 const RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60_000;
+const MAX_HTML_ICON_CANDIDATES = 32;
+const MAX_MANIFEST_ICONS = 32;
+const MAX_TOTAL_CANDIDATES = 48;
+const MAX_CONTENT_TYPE_PROBES = 12;
+const MAX_REDIRECT_HOPS = 5;
+const FETCH_TIMEOUT_MS = 10_000;
+const MIN_SIGNING_SECRET_LEN = 32;
 
 // Per-isolate rate limit state (best-effort on Workers).
 const rateHits = new Map<string, { count: number; start: number }>();
@@ -96,11 +103,8 @@ async function handlePreview(request: Request, env: Env): Promise<Response> {
     const normalized = normalizeUrl(inputUrl);
     await assertSafeUrl(normalized, allowPrivate);
 
-    const resp = await fetch(normalized, {
-      headers: { 'User-Agent': USER_AGENT },
-      redirect: 'manual',
-    });
-    const followed = await followRedirects(resp, normalized, allowPrivate, 10);
+    const resp = await safeFetch(normalized, allowPrivate);
+    const followed = await followRedirects(resp, normalized, allowPrivate, MAX_REDIRECT_HOPS);
     if (!followed.ok) {
       return jsonError('upstream request failed', 502, request);
     }
@@ -115,18 +119,18 @@ async function handlePreview(request: Request, env: Env): Promise<Response> {
       if (manifestUrl) {
         try {
           await assertSafeUrl(manifestUrl, allowPrivate);
-          const manifestResp = await fetch(manifestUrl, {
-            headers: { 'User-Agent': USER_AGENT },
-            redirect: 'manual',
-          });
-          const mFollowed = await followRedirects(manifestResp, manifestUrl, allowPrivate, 5);
+          const manifestResp = await safeFetch(manifestUrl, allowPrivate);
+          const mFollowed = await followRedirects(manifestResp, manifestUrl, allowPrivate, MAX_REDIRECT_HOPS);
           if (mFollowed.ok) {
             const manifestText = await readResponseText(mFollowed, MAX_MANIFEST);
             const manifest = JSON.parse(manifestText) as Manifest;
             const seen = new Set<string>(candidates.map((c) => c.url));
             const base = mFollowed.url;
             if (manifest.icons && Array.isArray(manifest.icons)) {
+              let manifestCount = 0;
               for (const icon of manifest.icons) {
+                if (manifestCount >= MAX_MANIFEST_ICONS) break;
+                if (candidates.length >= MAX_TOTAL_CANDIDATES) break;
                 const src = icon.src?.trim();
                 if (!src) continue;
                 const resolved = resolveUrl(base, src);
@@ -139,6 +143,7 @@ async function handlePreview(request: Request, env: Env): Promise<Response> {
                     priority: 15,
                   });
                   seen.add(resolved);
+                  manifestCount++;
                 }
               }
             }
@@ -149,30 +154,37 @@ async function handlePreview(request: Request, env: Env): Promise<Response> {
       }
     }
 
-    // Probe content-type for extensionless candidates (best-effort).
+    // Probe content-type for extensionless candidates (budgeted).
+    let probes = 0;
     for (const c of candidates) {
-      if (!c.type && !hasImageExtension(c.url)) {
-        const ct = await probeContentType(c.url, allowPrivate);
-        if (ct) c.type = ct;
-      }
+      if (c.type || hasImageExtension(c.url)) continue;
+      if (probes >= MAX_CONTENT_TYPE_PROBES) break;
+      const ct = await probeContentType(c.url, allowPrivate);
+      if (ct) c.type = ct;
+      probes++;
     }
 
     candidates.sort((a, b) => {
       if (a.priority !== b.priority) return a.priority - b.priority;
       return sizeScore(b.sizes) - sizeScore(a.sizes);
     });
+    if (candidates.length > MAX_TOTAL_CANDIDATES) {
+      candidates.length = MAX_TOTAL_CANDIDATES;
+    }
 
     const secret = await signingKey(env);
     const recommended = candidates[0] || null;
     const icons = [];
     for (const c of candidates) {
+      const allowed = getAllowedTypes(c.url, c.type);
+      if (allowed.length === 0) continue;
       icons.push({
         icon_url: c.url,
         token: await signUrl(secret, c.url),
         source_rel: c.rel,
         sizes: c.sizes || null,
         content_type: guessContentType(c.url, c.type),
-        allowed_types: getAllowedTypes(c.url, c.type),
+        allowed_types: allowed,
       });
     }
 
@@ -212,11 +224,8 @@ async function handleProxy(urlObj: URL, env: Env): Promise<Response> {
     const allowPrivate = env.FVF_ALLOW_PRIVATE === '1';
     await assertSafeUrl(iconUrl, allowPrivate);
 
-    const resp = await fetch(iconUrl, {
-      headers: { 'User-Agent': USER_AGENT },
-      redirect: 'manual',
-    });
-    const followed = await followRedirects(resp, iconUrl, allowPrivate, 10);
+    const resp = await safeFetch(iconUrl, allowPrivate);
+    const followed = await followRedirects(resp, iconUrl, allowPrivate, MAX_REDIRECT_HOPS);
     if (!followed.ok) {
       return jsonError('upstream request failed', 502);
     }
@@ -331,19 +340,26 @@ async function followRedirects(
     const next = new URL(loc, currentUrl).href;
     await assertSafeUrl(next, allowPrivate);
     currentUrl = next;
-    current = await fetch(next, {
-      headers: { 'User-Agent': USER_AGENT },
-      redirect: 'manual',
-    });
+    current = await safeFetch(next, allowPrivate);
   }
   throw new Error('too many redirects');
+}
+
+async function safeFetch(url: string, _allowPrivate: boolean): Promise<Response> {
+  return fetch(url, {
+    headers: { 'User-Agent': USER_AGENT },
+    redirect: 'manual',
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
 }
 
 // ─── Signing ───────────────────────────────────────────────────────
 
 async function signingKey(env: Env): Promise<CryptoKey> {
-  const secret = env.FVF_SIGNING_SECRET || 'dev-only-change-me-fvf-signing-secret';
-  const raw = new TextEncoder().encode(secret);
+  if (!env.FVF_SIGNING_SECRET || env.FVF_SIGNING_SECRET.length < MIN_SIGNING_SECRET_LEN) {
+    throw new Error('FVF_SIGNING_SECRET is not configured');
+  }
+  const raw = new TextEncoder().encode(env.FVF_SIGNING_SECRET);
   return crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, [
     'sign',
     'verify',
@@ -440,6 +456,7 @@ async function readResponseBytes(resp: Response, limit: number): Promise<ArrayBu
 function discoverCandidates(pageUrl: string, html: string): IconCandidate[] {
   const candidates: IconCandidate[] = [];
   const seen = new Set<string>();
+  let htmlCount = 0;
 
   const linkRe = /<link\b[^>]*>/gi;
   let match: RegExpExecArray | null;
@@ -450,18 +467,19 @@ function discoverCandidates(pageUrl: string, html: string): IconCandidate[] {
     const sizes = getAttr(tag, 'sizes')?.trim() || '';
     const type = getAttr(tag, 'type')?.trim() || '';
 
-    if (href && isIconRel(rel)) {
+    if (href && isIconRel(rel) && htmlCount < MAX_HTML_ICON_CANDIDATES) {
       const resolved = resolveUrl(pageUrl, href);
       if (resolved && !seen.has(resolved)) {
         candidates.push({ url: resolved, rel, sizes, type, priority: relPriority(rel) });
         seen.add(resolved);
+        htmlCount++;
       }
     }
   }
 
   try {
     const fallback = new URL('/favicon.ico', pageUrl).href;
-    if (!seen.has(fallback)) {
+    if (!seen.has(fallback) && candidates.length < MAX_TOTAL_CANDIDATES) {
       candidates.push({ url: fallback, rel: 'fallback', sizes: '', type: '', priority: 100 });
       seen.add(fallback);
     }
@@ -486,9 +504,14 @@ function findManifestHref(html: string): string | null {
 }
 
 function getAttr(tag: string, name: string): string | null {
-  const re = new RegExp(`${name}\\s*=\\s*["']([^"']*)["']`, 'i');
-  const m = tag.match(re);
-  return m ? m[1] : null;
+  // Quoted attributes: rel="icon" or rel='icon'
+  const quoted = new RegExp(`${name}\\s*=\\s*["']([^"']*)["']`, 'i');
+  const qm = tag.match(quoted);
+  if (qm) return qm[1];
+  // Unquoted attributes: rel=icon href=/favicon.ico
+  const unquoted = new RegExp(`${name}\\s*=\\s*([^\\s>]+)`, 'i');
+  const um = tag.match(unquoted);
+  return um ? um[1] : null;
 }
 
 function isIconRel(rel: string): boolean {
@@ -514,9 +537,13 @@ function relPriority(rel: string): number {
 
 function sizeScore(sizes: string): number {
   let max = 0;
+  const maxDim = 16384;
   for (const part of sizes.toLowerCase().split(/\s+/)) {
-    const [w, h] = part.split('x').map(Number);
-    if (w && h) max = Math.max(max, w * h);
+    let [w, h] = part.split('x').map(Number);
+    if (!w || !h || w <= 0 || h <= 0) continue;
+    w = Math.min(w, maxDim);
+    h = Math.min(h, maxDim);
+    max = Math.max(max, w * h);
   }
   return max;
 }
@@ -549,8 +576,9 @@ async function probeContentType(url: string, allowPrivate: boolean): Promise<str
       method: 'HEAD',
       headers: { 'User-Agent': USER_AGENT },
       redirect: 'manual',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
-    const followed = await followRedirects(resp, url, allowPrivate, 3);
+    const followed = await followRedirects(resp, url, allowPrivate, Math.min(3, MAX_REDIRECT_HOPS));
     if (followed.ok) {
       return followed.headers.get('content-type') || '';
     }
@@ -576,10 +604,21 @@ function guessContentType(url: string, declaredType: string): string {
 }
 
 function getAllowedTypes(url: string, declaredType: string): string[] {
-  const ct = guessContentType(url, declaredType);
-  if (ct.includes('svg')) return ['svg'];
-  if (ct.includes('icon') || url.toLowerCase().includes('.ico')) return ['ico', 'png', 'jpg', 'webp'];
-  return ['png', 'jpg', 'webp', 'ico'];
+  const path = url.split(/[?#]/)[0].toLowerCase();
+  const ct = (declaredType || '').toLowerCase();
+  if (path.endsWith('.svg') || ct.includes('image/svg+xml')) return ['svg'];
+  if (path.endsWith('.ico') || ct.includes('image/x-icon') || ct.includes('image/vnd.microsoft.icon')) {
+    return ['ico', 'png', 'jpg', 'webp'];
+  }
+  if (path.endsWith('.png') || ct.includes('image/png')) return ['png', 'jpg', 'webp', 'ico'];
+  if (path.endsWith('.jpg') || path.endsWith('.jpeg') || ct.includes('image/jpeg')) {
+    return ['jpg', 'png', 'webp', 'ico'];
+  }
+  if (path.endsWith('.gif') || ct.includes('image/gif')) return ['png', 'jpg', 'webp', 'ico'];
+  if (path.endsWith('.webp') || ct.includes('image/webp')) return ['webp', 'png', 'jpg', 'ico'];
+  if (ct.startsWith('image/')) return ['png', 'jpg', 'webp', 'ico'];
+  // Unknown / non-image: do not advertise convertible formats.
+  return [];
 }
 
 // ─── Rate limit / errors / headers ─────────────────────────────────
@@ -599,18 +638,21 @@ function allowRate(key: string): boolean {
 function publicError(err: unknown): string {
   const message = err instanceof Error ? err.message : 'Unknown error';
   const lower = message.toLowerCase();
+  if (lower.includes('fvf_signing_secret')) return 'service misconfigured';
   if (lower.includes('private or reserved') || lower.includes('only http')) return 'URL is not allowed';
   if (lower.includes('token')) return message;
   if (lower.includes('rate limit')) return 'rate limit exceeded';
   if (lower.includes('too large') || lower.includes('exceeds')) return 'response too large';
   if (lower.includes('redirect')) return 'URL is not allowed';
   if (lower.includes('url is required')) return 'url is required';
+  if (lower.includes('abort') || lower.includes('timeout')) return 'upstream request timed out';
   return 'request failed';
 }
 
 function statusFor(err: unknown): number {
   const message = err instanceof Error ? err.message : '';
   const lower = message.toLowerCase();
+  if (lower.includes('fvf_signing_secret')) return 503;
   if (lower.includes('required') || lower.includes('invalid url') || lower.includes('only http')) return 400;
   if (lower.includes('token')) return 403;
   if (lower.includes('rate')) return 429;
@@ -624,7 +666,7 @@ function securityHeaders(request?: Request): Record<string, string> {
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer',
     'Content-Security-Policy':
-      "default-src 'self'; img-src 'self' data: blob: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+      "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   };
   // Same-origin UI only — do not open CORS to the world.

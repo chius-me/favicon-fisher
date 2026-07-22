@@ -1,7 +1,6 @@
 package security
 
 import (
-	"errors"
 	"strings"
 )
 
@@ -42,13 +41,13 @@ func PublicError(err error) string {
 		return msg
 	default:
 		// Avoid leaking dial errors, DNS details, raw URLs with credentials, etc.
-		if errors.Is(err, errors.New("")) {
-			return "request failed"
-		}
 		if strings.Contains(lower, "connection") || strings.Contains(lower, "lookup") ||
 			strings.Contains(lower, "dial") || strings.Contains(lower, "tls") ||
 			strings.Contains(lower, "eof") || strings.Contains(lower, "refused") {
 			return "upstream request failed"
+		}
+		if strings.Contains(lower, "dimensions exceed") {
+			return "image dimensions exceed limits"
 		}
 		// Keep short validation-style messages; clamp long ones.
 		if len(msg) > 120 || strings.Contains(msg, "://") {

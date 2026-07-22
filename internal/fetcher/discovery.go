@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+
+	"github.com/chius-me/favicon-fisher/internal/security"
 )
 
 func NormalizeInputURL(raw string) (string, error) {
@@ -33,37 +35,49 @@ func NormalizeInputURL(raw string) (string, error) {
 	return parsed.String(), nil
 }
 
-func DiscoverCandidates(pageURL string, body io.Reader) ([]Candidate, error) {
+// DiscoveryResult holds icon candidates and the optional manifest href from one HTML parse.
+type DiscoveryResult struct {
+	Candidates   []Candidate
+	ManifestHref string
+}
+
+// DiscoverFromHTML parses HTML once and returns icon candidates plus manifest href.
+func DiscoverFromHTML(pageURL string, body io.Reader) (DiscoveryResult, error) {
 	parsedPageURL, err := url.Parse(pageURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse page URL: %w", err)
+		return DiscoveryResult{}, fmt.Errorf("parse page URL: %w", err)
 	}
 
 	root, err := html.Parse(body)
 	if err != nil {
-		return nil, fmt.Errorf("parse HTML: %w", err)
+		return DiscoveryResult{}, fmt.Errorf("parse HTML: %w", err)
 	}
 
 	var candidates []Candidate
 	seen := map[string]bool{}
+	var manifestHref string
+	htmlCount := 0
 
 	var walk func(*html.Node)
 	walk = func(node *html.Node) {
 		if node.Type == html.ElementNode && node.Data == "link" {
 			rel := strings.ToLower(strings.TrimSpace(getAttr(node, "rel")))
 			href := strings.TrimSpace(getAttr(node, "href"))
-			if href != "" && isIconRel(rel) {
+			if rel == "manifest" && manifestHref == "" && href != "" {
+				manifestHref = href
+			}
+			if href != "" && isIconRel(rel) && htmlCount < security.MaxHTMLIconCandidates {
 				resolved := resolveURL(parsedPageURL, href)
 				if resolved != "" && !seen[resolved] {
-					candidate := Candidate{
+					candidates = append(candidates, Candidate{
 						URL:      resolved,
 						Rel:      rel,
 						Sizes:    strings.TrimSpace(getAttr(node, "sizes")),
 						Type:     strings.TrimSpace(getAttr(node, "type")),
 						Priority: relPriority(rel),
-					}
-					candidates = append(candidates, candidate)
+					})
 					seen[resolved] = true
+					htmlCount++
 				}
 			}
 		}
@@ -75,7 +89,7 @@ func DiscoverCandidates(pageURL string, body io.Reader) ([]Candidate, error) {
 	walk(root)
 
 	fallback := parsedPageURL.ResolveReference(&url.URL{Path: "/favicon.ico"}).String()
-	if !seen[fallback] {
+	if !seen[fallback] && len(candidates) < security.MaxTotalCandidates {
 		candidates = append(candidates, Candidate{
 			URL:      fallback,
 			Rel:      "fallback",
@@ -83,14 +97,23 @@ func DiscoverCandidates(pageURL string, body io.Reader) ([]Candidate, error) {
 		})
 	}
 
-	return candidates, nil
-}
-
-func BestCandidate(candidates []Candidate) (Candidate, error) {
-	if len(candidates) == 0 {
-		return Candidate{}, errors.New("no favicon candidates found")
+	if len(candidates) > security.MaxTotalCandidates {
+		candidates = candidates[:security.MaxTotalCandidates]
 	}
 
+	return DiscoveryResult{Candidates: candidates, ManifestHref: manifestHref}, nil
+}
+
+func DiscoverCandidates(pageURL string, body io.Reader) ([]Candidate, error) {
+	result, err := DiscoverFromHTML(pageURL, body)
+	if err != nil {
+		return nil, err
+	}
+	return result.Candidates, nil
+}
+
+// RankCandidates returns candidates sorted by priority then size (best first).
+func RankCandidates(candidates []Candidate) []Candidate {
 	sorted := append([]Candidate(nil), candidates...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		if sorted[i].Priority != sorted[j].Priority {
@@ -98,8 +121,14 @@ func BestCandidate(candidates []Candidate) (Candidate, error) {
 		}
 		return sizeScore(sorted[i].Sizes) > sizeScore(sorted[j].Sizes)
 	})
+	return sorted
+}
 
-	return sorted[0], nil
+func BestCandidate(candidates []Candidate) (Candidate, error) {
+	if len(candidates) == 0 {
+		return Candidate{}, errors.New("no favicon candidates found")
+	}
+	return RankCandidates(candidates)[0], nil
 }
 
 func getAttr(node *html.Node, key string) string {
@@ -164,33 +193,16 @@ func resolveURLMust(baseURL, href string) string {
 
 // FindManifestHref returns the first <link rel="manifest"> href from HTML body.
 func FindManifestHref(body io.Reader) string {
-	root, err := html.Parse(body)
+	result, err := DiscoverFromHTML("https://example.invalid/", body)
 	if err != nil {
 		return ""
 	}
-	var found string
-	var walk func(*html.Node)
-	walk = func(node *html.Node) {
-		if found != "" {
-			return
-		}
-		if node.Type == html.ElementNode && node.Data == "link" {
-			rel := strings.ToLower(strings.TrimSpace(getAttr(node, "rel")))
-			if rel == "manifest" {
-				found = strings.TrimSpace(getAttr(node, "href"))
-				return
-			}
-		}
-		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			walk(child)
-		}
-	}
-	walk(root)
-	return found
+	return result.ManifestHref
 }
 
-func sizeScore(sizes string) int {
-	maxScore := 0
+func sizeScore(sizes string) int64 {
+	var maxScore int64
+	const maxDim = 16384
 	for _, part := range strings.Fields(strings.ToLower(sizes)) {
 		pieces := strings.Split(part, "x")
 		if len(pieces) != 2 {
@@ -198,10 +210,16 @@ func sizeScore(sizes string) int {
 		}
 		w, errW := strconv.Atoi(pieces[0])
 		h, errH := strconv.Atoi(pieces[1])
-		if errW != nil || errH != nil {
+		if errW != nil || errH != nil || w <= 0 || h <= 0 {
 			continue
 		}
-		score := w * h
+		if w > maxDim {
+			w = maxDim
+		}
+		if h > maxDim {
+			h = maxDim
+		}
+		score := int64(w) * int64(h)
 		if score > maxScore {
 			maxScore = score
 		}

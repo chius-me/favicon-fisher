@@ -40,7 +40,7 @@ func allowedTypesFor(iconURL string, contentType string) []string {
 	}
 	contentLower := strings.ToLower(contentType)
 
-	if strings.HasSuffix(urlLower, ".svg") || strings.Contains(contentLower, "image/svg+xml") || strings.Contains(contentLower, "svg") {
+	if strings.HasSuffix(urlLower, ".svg") || strings.Contains(contentLower, "image/svg+xml") {
 		return []string{"svg"}
 	}
 	if strings.HasSuffix(urlLower, ".ico") || strings.Contains(contentLower, "image/x-icon") || strings.Contains(contentLower, "image/vnd.microsoft.icon") {
@@ -58,9 +58,10 @@ func allowedTypesFor(iconURL string, contentType string) []string {
 	if strings.HasSuffix(urlLower, ".webp") || strings.Contains(contentLower, "image/webp") {
 		return []string{"png", "jpg"}
 	}
-	// Extensionless CDN URLs / unknown: allow common raster conversions.
-	if contentLower == "" || strings.Contains(contentLower, "octet-stream") || strings.Contains(contentLower, "image/") {
+	// Known image/* without a more specific match (e.g. image/* from probes).
+	if strings.HasPrefix(contentLower, "image/") {
 		return []string{"png", "jpg"}
 	}
-	return []string{"png", "jpg"}
+	// Unknown / non-image: do not advertise convertible formats.
+	return nil
 }

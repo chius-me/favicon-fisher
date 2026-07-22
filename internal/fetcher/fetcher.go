@@ -39,8 +39,7 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fe
 		return Result{}, err
 	}
 
-	best := preview.Best
-	candidates := preview.Candidates
+	candidates := RankCandidates(preview.Candidates)
 	result := Result{
 		InputURL: rawURL,
 		PageURL:  preview.PageURL,
@@ -50,16 +49,16 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fe
 		var allIcons []IconResult
 		downloadedURLs := make(map[string]bool)
 
-		for _, candidate := range candidates {
+		for i, candidate := range candidates {
 			if downloadedURLs[candidate.URL] {
 				continue
 			}
-			iconRes, err := DownloadIconWithPolicy(ctx, f.Client, f.Policy, candidate.URL, outputDir, candidate.Sizes, candidate.Rel)
+			iconRes, err := DownloadIconWithPolicy(ctx, f.Client, f.Policy, candidate.URL, outputDir, candidate.Sizes, candidate.Rel, i+1)
 			if err == nil {
 				allIcons = append(allIcons, iconRes)
 				downloadedURLs[candidate.URL] = true
 
-				if candidate.URL == best.URL {
+				if result.IconURL == "" {
 					result.IconURL = iconRes.IconURL
 					result.OutputPath = iconRes.OutputPath
 					result.ContentType = iconRes.ContentType
@@ -76,33 +75,29 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fe
 			return Result{}, fmt.Errorf("failed to download any icons")
 		}
 		result.AllIcons = allIcons
-
-		if result.IconURL == "" && len(allIcons) > 0 {
-			first := allIcons[0]
-			result.IconURL = first.IconURL
-			result.OutputPath = first.OutputPath
-			result.ContentType = first.ContentType
-			result.Bytes = first.Bytes
-			result.StatusCode = first.StatusCode
-			result.Filename = first.Filename
-			result.SourceRel = first.SourceRel
-			result.FallbackUsed = first.SourceRel == "fallback"
-		}
-
 	} else {
-		iconRes, err := DownloadIconWithPolicy(ctx, f.Client, f.Policy, best.URL, outputDir, best.Sizes, best.Rel)
-		if err != nil {
-			return Result{}, err
+		// Try ranked candidates until one downloads successfully.
+		var lastErr error
+		for i, candidate := range candidates {
+			iconRes, err := DownloadIconWithPolicy(ctx, f.Client, f.Policy, candidate.URL, outputDir, candidate.Sizes, candidate.Rel, i+1)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			result.IconURL = iconRes.IconURL
+			result.OutputPath = iconRes.OutputPath
+			result.ContentType = iconRes.ContentType
+			result.Bytes = iconRes.Bytes
+			result.StatusCode = iconRes.StatusCode
+			result.Filename = iconRes.Filename
+			result.SourceRel = iconRes.SourceRel
+			result.FallbackUsed = candidate.Rel == "fallback"
+			return result, nil
 		}
-
-		result.IconURL = iconRes.IconURL
-		result.OutputPath = iconRes.OutputPath
-		result.ContentType = iconRes.ContentType
-		result.Bytes = iconRes.Bytes
-		result.StatusCode = iconRes.StatusCode
-		result.Filename = iconRes.Filename
-		result.SourceRel = iconRes.SourceRel
-		result.FallbackUsed = best.Rel == "fallback"
+		if lastErr != nil {
+			return Result{}, lastErr
+		}
+		return Result{}, fmt.Errorf("failed to download any icons")
 	}
 
 	return result, nil
@@ -135,30 +130,40 @@ func (f *Fetcher) Preview(ctx context.Context, rawURL string) (PreviewResult, er
 	}
 
 	pageURL := resp.Request.URL.String()
-	candidates, err := DiscoverCandidates(pageURL, bytes.NewReader(body))
+	discovered, err := DiscoverFromHTML(pageURL, bytes.NewReader(body))
 	if err != nil {
 		return PreviewResult{}, err
 	}
+	candidates := discovered.Candidates
 
 	// Enrich with web manifest icons when present.
-	if href := FindManifestHref(bytes.NewReader(body)); href != "" {
-		if manifestCandidates, mErr := f.fetchManifestIcons(ctx, pageURL, href); mErr == nil {
+	if discovered.ManifestHref != "" {
+		if manifestCandidates, mErr := f.fetchManifestIcons(ctx, pageURL, discovered.ManifestHref); mErr == nil {
 			candidates = mergeCandidates(candidates, manifestCandidates)
 		}
 	}
 
-	// Probe content types for candidates missing a declared type / clear extension.
+	// Probe content types with a hard cap on network probes.
+	probes := 0
 	for i := range candidates {
-		if candidates[i].Type == "" && !hasImageExtension(candidates[i].URL) {
-			if ct := ProbeContentType(ctx, f.Client, f.Policy, candidates[i].URL); ct != "" {
-				candidates[i].Type = ct
-			}
-		} else if candidates[i].Type == "" {
-			// Still useful to fill type from HEAD when only extension is known.
-			if ct := ProbeContentType(ctx, f.Client, f.Policy, candidates[i].URL); ct != "" {
-				candidates[i].Type = ct
-			}
+		if candidates[i].Type != "" {
+			continue
 		}
+		if probes >= security.MaxContentTypeProbes {
+			break
+		}
+		// Prefer probing extensionless URLs; still fill type when only extension is known
+		// if we have probe budget remaining after those.
+		if !hasImageExtension(candidates[i].URL) || probes < security.MaxContentTypeProbes/2 {
+			if ct := ProbeContentType(ctx, f.Client, f.Policy, candidates[i].URL); ct != "" {
+				candidates[i].Type = ct
+			}
+			probes++
+		}
+	}
+
+	if len(candidates) > security.MaxTotalCandidates {
+		candidates = RankCandidates(candidates)[:security.MaxTotalCandidates]
 	}
 
 	best, err := BestCandidate(candidates)
@@ -170,7 +175,7 @@ func (f *Fetcher) Preview(ctx context.Context, rawURL string) (PreviewResult, er
 		InputURL:   rawURL,
 		PageURL:    pageURL,
 		Best:       best,
-		Candidates: candidates,
+		Candidates: RankCandidates(candidates),
 	}, nil
 }
 
@@ -219,6 +224,9 @@ func (f *Fetcher) fetchManifestIcons(ctx context.Context, pageURL, href string) 
 
 	var out []Candidate
 	for _, icon := range manifest.Icons {
+		if len(out) >= security.MaxManifestIcons {
+			break
+		}
 		src := strings.TrimSpace(icon.Src)
 		if src == "" {
 			continue
@@ -247,6 +255,9 @@ func mergeCandidates(base, extra []Candidate) []Candidate {
 		if seen[c.URL] {
 			continue
 		}
+		if len(base) >= security.MaxTotalCandidates {
+			break
+		}
 		base = append(base, c)
 		seen[c.URL] = true
 	}
@@ -272,32 +283,27 @@ func ProbeContentType(ctx context.Context, client *http.Client, policy security.
 	if client == nil {
 		return ""
 	}
-	req, err := security.NewRequestWithPolicy(ctx, http.MethodHead, iconURL, policy)
+	if ct := doProbe(ctx, client, policy, iconURL, http.MethodHead); ct != "" {
+		return ct
+	}
+	return doProbe(ctx, client, policy, iconURL, http.MethodGet)
+}
+
+func doProbe(ctx context.Context, client *http.Client, policy security.Policy, iconURL, method string) string {
+	req, err := security.NewRequestWithPolicy(ctx, method, iconURL, policy)
 	if err != nil {
 		return ""
 	}
 	resp, err := client.Do(req)
-	if err == nil {
-		defer resp.Body.Close()
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
-				return ct
-			}
-		}
-	}
-
-	getReq, err := security.NewRequestWithPolicy(ctx, http.MethodGet, iconURL, policy)
 	if err != nil {
 		return ""
 	}
-	getResp, err := client.Do(getReq)
-	if err != nil {
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return ""
 	}
-	defer getResp.Body.Close()
-	if getResp.StatusCode < 200 || getResp.StatusCode >= 300 {
-		return ""
+	if method == http.MethodGet {
+		_, _ = security.LimitedReadAll(resp.Body, 64)
 	}
-	_, _ = security.LimitedReadAll(getResp.Body, 64)
-	return strings.TrimSpace(getResp.Header.Get("Content-Type"))
+	return strings.TrimSpace(resp.Header.Get("Content-Type"))
 }

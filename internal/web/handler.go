@@ -177,6 +177,56 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(converted.Data)
 }
 
+// Proxy serves a signed same-origin preview of a remote icon (no conversion).
+// Prevents the browser from fetching arbitrary (including private) icon URLs directly.
+func (h *Handler) Proxy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+
+	iconURL := strings.TrimSpace(r.URL.Query().Get("url"))
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if iconURL == "" {
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "url parameter is required"})
+		return
+	}
+	if token == "" {
+		writeJSON(w, http.StatusForbidden, errorResponse{Error: "token is required"})
+		return
+	}
+	if err := h.signer.Verify(iconURL, token); err != nil {
+		writeJSON(w, http.StatusForbidden, errorResponse{Error: security.PublicError(err)})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	resp, err := h.downloadSource(ctx, iconURL)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, errorResponse{Error: security.PublicError(err)})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := security.LimitedReadAll(resp.Body, security.MaxIconBody)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, errorResponse{Error: security.PublicError(err)})
+		return
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
 func (h *Handler) downloadSource(ctx context.Context, iconURL string) (*http.Response, error) {
 	req, err := security.NewRequestWithPolicy(ctx, http.MethodGet, iconURL, h.policy)
 	if err != nil {

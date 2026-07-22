@@ -17,13 +17,14 @@ form.addEventListener('submit', async (event) => {
     setStatus('Loading preview...', false);
     resultsEl.classList.add('hidden');
     previewBtn.disabled = true;
+    form.setAttribute('aria-busy', 'true');
     try {
         const response = await fetch('/api/preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url }),
         });
-        const payload = await response.json();
+        const payload = (await response.json());
         if (!response.ok) {
             throw new Error(payload.error || 'Preview failed');
         }
@@ -40,6 +41,7 @@ form.addEventListener('submit', async (event) => {
     }
     finally {
         previewBtn.disabled = false;
+        form.removeAttribute('aria-busy');
     }
 });
 downloadBtn.addEventListener('click', async () => {
@@ -58,7 +60,7 @@ downloadBtn.addEventListener('click', async () => {
             }),
         });
         if (!response.ok) {
-            const payload = await response.json();
+            const payload = (await response.json());
             throw new Error(payload.error || 'Download failed');
         }
         const blob = await response.blob();
@@ -81,11 +83,18 @@ downloadBtn.addEventListener('click', async () => {
         downloadBtn.disabled = false;
     }
 });
+function proxyUrl(icon) {
+    return `/api/proxy?url=${encodeURIComponent(icon.icon_url)}&token=${encodeURIComponent(icon.token)}`;
+}
 function renderPreview() {
     if (!previewState || !selectedIcon)
         return;
-    heroIconEl.src = selectedIcon.icon_url;
+    heroIconEl.src = proxyUrl(selectedIcon);
     heroIconEl.alt = 'Selected favicon preview';
+    heroIconEl.onerror = () => {
+        heroIconEl.removeAttribute('src');
+        heroIconEl.alt = 'Preview unavailable';
+    };
     pageUrlEl.textContent = previewState.page_url;
     selectedUrlEl.textContent = selectedIcon.icon_url;
     while (iconListEl.firstChild) {
@@ -94,10 +103,16 @@ function renderPreview() {
     previewState.icons.forEach((icon) => {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = `icon-item ${icon.icon_url === selectedIcon.icon_url ? 'active' : ''}`;
+        const isActive = icon.icon_url === selectedIcon.icon_url;
+        button.className = `icon-item ${isActive ? 'active' : ''}`;
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         const img = document.createElement('img');
-        img.src = icon.icon_url;
+        img.src = proxyUrl(icon);
         img.alt = icon.source_rel || 'icon';
+        img.onerror = () => {
+            img.alt = 'unavailable';
+            img.style.opacity = '0.3';
+        };
         const span = document.createElement('span');
         span.textContent = icon.source_rel || 'icon';
         const small = document.createElement('small');

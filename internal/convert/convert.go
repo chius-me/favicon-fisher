@@ -14,6 +14,8 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+
+	"github.com/chius-me/favicon-fisher/internal/security"
 )
 
 type Result struct {
@@ -24,15 +26,24 @@ type Result struct {
 
 func Convert(data []byte, contentType string, filename string, format string) (Result, error) {
 	target := normalizeFormat(format)
-	if target == "" {
+	switch target {
+	case "png", "jpg", "svg", "ico":
+	case "":
 		return Result{}, fmt.Errorf("format is required")
+	default:
+		return Result{}, fmt.Errorf("unsupported output format: %s", format)
 	}
 
 	sourceExt := normalizeFormat(strings.TrimPrefix(strings.ToLower(filepath.Ext(filename)), "."))
 	if sourceExt == "jpeg" {
 		sourceExt = "jpg"
 	}
-	if sourceExt == "svg" {
+
+	// SVG passthrough only when content actually looks like SVG.
+	if target == "svg" || sourceExt == "svg" || looksLikeSVG(data) {
+		if !looksLikeSVG(data) {
+			return Result{}, fmt.Errorf("svg output is only supported for svg sources")
+		}
 		if target != "svg" {
 			return Result{}, fmt.Errorf("svg sources currently support svg output only")
 		}
@@ -42,7 +53,12 @@ func Convert(data []byte, contentType string, filename string, format string) (R
 			Filename:    replaceExt(filename, ".svg"),
 		}, nil
 	}
-	if sourceExt == "ico" {
+
+	// ICO passthrough only when ICONDIR header matches.
+	if target == "ico" || sourceExt == "ico" || looksLikeICO(data) {
+		if !looksLikeICO(data) {
+			return Result{}, fmt.Errorf("ico output is only supported for ico sources")
+		}
 		if target != "ico" {
 			return Result{}, fmt.Errorf("ico sources currently support ico output only")
 		}
@@ -53,23 +69,8 @@ func Convert(data []byte, contentType string, filename string, format string) (R
 		}, nil
 	}
 
-	if target == "svg" {
-		if isSVG(contentType, sourceExt, data) {
-			return Result{
-				Data:        data,
-				ContentType: "image/svg+xml",
-				Filename:    replaceExt(filename, ".svg"),
-			}, nil
-		}
-		return Result{}, fmt.Errorf("svg output is only supported for svg sources")
-	}
-
-	if target == sourceExt && target != "" && target != "jpg" && target != "png" {
-		return Result{
-			Data:        data,
-			ContentType: contentType,
-			Filename:    filename,
-		}, nil
+	if err := assertDecodableImageLimits(data); err != nil {
+		return Result{}, err
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(data))
@@ -103,6 +104,59 @@ func Convert(data []byte, contentType string, filename string, format string) (R
 	}
 }
 
+// assertDecodableImageLimits rejects decompression bombs before full decode.
+func assertDecodableImageLimits(data []byte) error {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("decode source config: %w", err)
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return fmt.Errorf("image dimensions exceed limits")
+	}
+	if cfg.Width > security.MaxImageDimension || cfg.Height > security.MaxImageDimension {
+		return fmt.Errorf("image dimensions exceed limits")
+	}
+	pixels := int64(cfg.Width) * int64(cfg.Height)
+	if pixels > security.MaxImagePixels {
+		return fmt.Errorf("image dimensions exceed limits")
+	}
+	return nil
+}
+
+func looksLikeSVG(data []byte) bool {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	// Reject DOCTYPE/entity-heavy payloads early; require an <svg root-ish marker.
+	if strings.Contains(lower, "<!doctype") || strings.Contains(lower, "<!entity") {
+		return false
+	}
+	if strings.HasPrefix(lower, "<svg") {
+		return true
+	}
+	if strings.HasPrefix(lower, "<?xml") && strings.Contains(lower, "<svg") {
+		return true
+	}
+	return false
+}
+
+func looksLikeICO(data []byte) bool {
+	// ICONDIR: reserved(0) + type(1=ICO) + count(>=1)
+	if len(data) < 6 {
+		return false
+	}
+	if data[0] != 0 || data[1] != 0 {
+		return false
+	}
+	if data[2] != 1 || data[3] != 0 {
+		return false
+	}
+	count := int(data[4]) | int(data[5])<<8
+	return count >= 1 && count <= 64
+}
+
 func normalizeFormat(format string) string {
 	format = strings.TrimSpace(strings.ToLower(format))
 	format = strings.TrimPrefix(format, ".")
@@ -110,14 +164,6 @@ func normalizeFormat(format string) string {
 		return "jpg"
 	}
 	return format
-}
-
-func isSVG(contentType string, sourceExt string, data []byte) bool {
-	if strings.Contains(strings.ToLower(contentType), "image/svg+xml") || sourceExt == "svg" {
-		return true
-	}
-	trimmed := strings.TrimSpace(string(data))
-	return strings.HasPrefix(trimmed, "<svg") || strings.HasPrefix(trimmed, "<?xml") && strings.Contains(trimmed, "<svg")
 }
 
 func replaceExt(filename string, ext string) string {
