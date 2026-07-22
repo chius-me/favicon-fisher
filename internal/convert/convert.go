@@ -39,9 +39,16 @@ func Convert(data []byte, contentType string, filename string, format string) (R
 		sourceExt = "jpg"
 	}
 
+	sniffed := SniffFormat(data)
+
+	// Prefer magic-byte detection over filename extension when they conflict.
+	if sniffed != "" {
+		sourceExt = sniffed
+	}
+
 	// SVG passthrough only when content actually looks like SVG.
-	if target == "svg" || sourceExt == "svg" || looksLikeSVG(data) {
-		if !looksLikeSVG(data) {
+	if target == "svg" || sourceExt == "svg" {
+		if sniffed != "svg" {
 			return Result{}, fmt.Errorf("svg output is only supported for svg sources")
 		}
 		if target != "svg" {
@@ -55,8 +62,8 @@ func Convert(data []byte, contentType string, filename string, format string) (R
 	}
 
 	// ICO passthrough only when ICONDIR header matches.
-	if target == "ico" || sourceExt == "ico" || looksLikeICO(data) {
-		if !looksLikeICO(data) {
+	if target == "ico" || sourceExt == "ico" {
+		if sniffed != "ico" {
 			return Result{}, fmt.Errorf("ico output is only supported for ico sources")
 		}
 		if target != "ico" {
@@ -67,6 +74,15 @@ func Convert(data []byte, contentType string, filename string, format string) (R
 			ContentType: contentTypeOrDefault(contentType, "image/x-icon"),
 			Filename:    replaceExt(filename, ".ico"),
 		}, nil
+	}
+
+	// Require a recognizable raster format before decode.
+	switch sniffed {
+	case "png", "jpg", "gif", "webp":
+	case "":
+		return Result{}, fmt.Errorf("unrecognized image format")
+	default:
+		return Result{}, fmt.Errorf("unsupported source format: %s", sniffed)
 	}
 
 	if err := assertDecodableImageLimits(data); err != nil {
@@ -121,6 +137,50 @@ func assertDecodableImageLimits(data []byte) error {
 		return fmt.Errorf("image dimensions exceed limits")
 	}
 	return nil
+}
+
+// SniffFormat returns a short format name (png, jpg, gif, webp, ico, svg) from magic bytes.
+// Empty string means unknown / non-image.
+func SniffFormat(data []byte) string {
+	if looksLikePNG(data) {
+		return "png"
+	}
+	if looksLikeJPEG(data) {
+		return "jpg"
+	}
+	if looksLikeGIF(data) {
+		return "gif"
+	}
+	if looksLikeWebP(data) {
+		return "webp"
+	}
+	if looksLikeICO(data) {
+		return "ico"
+	}
+	if looksLikeSVG(data) {
+		return "svg"
+	}
+	return ""
+}
+
+func looksLikePNG(data []byte) bool {
+	return len(data) >= 8 &&
+		data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4e && data[3] == 0x47 &&
+		data[4] == 0x0d && data[5] == 0x0a && data[6] == 0x1a && data[7] == 0x0a
+}
+
+func looksLikeJPEG(data []byte) bool {
+	return len(data) >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff
+}
+
+func looksLikeGIF(data []byte) bool {
+	return len(data) >= 6 &&
+		(string(data[:6]) == "GIF87a" || string(data[:6]) == "GIF89a")
+}
+
+func looksLikeWebP(data []byte) bool {
+	return len(data) >= 12 &&
+		string(data[0:4]) == "RIFF" && string(data[8:12]) == "WEBP"
 }
 
 func looksLikeSVG(data []byte) bool {

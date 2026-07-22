@@ -36,7 +36,13 @@ func main() {
 		Signer: signer,
 		Policy: &policy,
 	})
-	mux := web.NewMux(handler, web.StaticFS())
+	limiter := security.RateLimiterFromEnv()
+	defer limiter.Stop()
+	mux := web.NewMuxWithLimiter(handler, web.StaticFS(), limiter)
+
+	if proxies := os.Getenv(security.EnvTrustedProxies); proxies != "" {
+		log.Printf("trusted proxies for client IP: %s", proxies)
+	}
 
 	server := &http.Server{
 		Addr:              ":" + port,

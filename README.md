@@ -92,6 +92,8 @@ npx wrangler deploy
 - Icon previews always go through a same-origin signed `/api/proxy` so the browser never loads remote (or private) icon URLs directly.  
 - Go SSRF checks DNS at dial time; Worker SSRF blocks private IP literals / hostnames and relies on Cloudflare’s egress limits (not full DNS rebinding parity).  
 - SVG (and ICO in the Go Web UI) are passthrough only when the payload matches the format (not just the file extension).  
+- Behind a reverse proxy, set `FVF_TRUSTED_PROXIES` so rate limits use real client IPs.  
+- Security policy: [SECURITY.md](./SECURITY.md). Deploy notes: [docs/](./docs/).  
 - More detail: `./fvf --help`, source under `cmd/` / `internal/` / `worker/`.
 
 ## License

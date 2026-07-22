@@ -6,6 +6,7 @@
     "dev": "wrangler dev",
     "build": "tsc -p public/tsconfig.json",
     "check": "tsc --noEmit && tsc -p public/tsconfig.json --noEmit",
+    "test:golden": "node scripts/golden-check.mjs",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {

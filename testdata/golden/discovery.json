@@ -1,0 +1,18 @@
+{
+  "page_url": "https://example.com/blog/post",
+  "html_file": "sample.html",
+  "manifest_href": "/site.webmanifest",
+  "expected_urls": [
+    "https://example.com/favicon-32.png",
+    "https://cdn.example.com/apple.png",
+    "https://example.com/safari.svg",
+    "https://example.com/favicon.ico"
+  ],
+  "expected_rels": {
+    "https://example.com/favicon-32.png": "icon",
+    "https://cdn.example.com/apple.png": "apple-touch-icon",
+    "https://example.com/safari.svg": "mask-icon",
+    "https://example.com/favicon.ico": "fallback"
+  },
+  "best_url": "https://example.com/favicon-32.png"
+}

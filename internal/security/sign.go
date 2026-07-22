@@ -19,9 +19,13 @@ const (
 	DefaultTokenTTL = 15 * time.Minute
 	// EnvSigningSecret is the environment variable for a stable HMAC secret.
 	EnvSigningSecret = "FVF_SIGNING_SECRET"
+
+	// PurposeFetch authorizes same-origin proxy and download of a signed icon URL.
+	// Bound in the MAC so future endpoints cannot reuse these tokens as a confused deputy.
+	PurposeFetch = "fetch"
 )
 
-// Signer issues and verifies short-lived HMAC tokens bound to an icon URL.
+// Signer issues and verifies short-lived HMAC tokens bound to an icon URL and purpose.
 type Signer struct {
 	secret []byte
 	ttl    time.Duration
@@ -50,18 +54,34 @@ func NewSigner(secret string, ttl time.Duration) *Signer {
 	return &Signer{secret: sec, ttl: ttl}
 }
 
-// Sign returns a token for iconURL.
+// Sign returns a token for iconURL with PurposeFetch (proxy + download).
 // Format: <expiryUnix>.<base64url(hmac)>
 func (s *Signer) Sign(iconURL string) string {
+	return s.SignFor(iconURL, PurposeFetch)
+}
+
+// SignFor returns a token bound to iconURL and purpose.
+func (s *Signer) SignFor(iconURL, purpose string) string {
+	if purpose == "" {
+		purpose = PurposeFetch
+	}
 	exp := time.Now().Add(s.ttl).Unix()
-	mac := s.mac(iconURL, exp)
+	mac := s.mac(purpose, iconURL, exp)
 	return fmt.Sprintf("%d.%s", exp, base64.RawURLEncoding.EncodeToString(mac))
 }
 
-// Verify checks that token authorizes iconURL and has not expired.
+// Verify checks that token authorizes iconURL for PurposeFetch and has not expired.
 func (s *Signer) Verify(iconURL, token string) error {
+	return s.VerifyFor(iconURL, token, PurposeFetch)
+}
+
+// VerifyFor checks that token authorizes iconURL for the given purpose.
+func (s *Signer) VerifyFor(iconURL, token, purpose string) error {
 	if strings.TrimSpace(token) == "" {
 		return errors.New("token is required")
+	}
+	if purpose == "" {
+		purpose = PurposeFetch
 	}
 	parts := strings.Split(token, ".")
 	if len(parts) != 2 {
@@ -78,15 +98,17 @@ func (s *Signer) Verify(iconURL, token string) error {
 	if err != nil {
 		return errors.New("invalid token")
 	}
-	mac := s.mac(iconURL, exp)
+	mac := s.mac(purpose, iconURL, exp)
 	if !hmac.Equal(expected, mac) {
 		return errors.New("invalid token")
 	}
 	return nil
 }
 
-func (s *Signer) mac(iconURL string, exp int64) []byte {
+func (s *Signer) mac(purpose, iconURL string, exp int64) []byte {
 	h := hmac.New(sha256.New, s.secret)
+	_, _ = h.Write([]byte(purpose))
+	_, _ = h.Write([]byte{'\n'})
 	_, _ = h.Write([]byte(iconURL))
 	_, _ = h.Write([]byte{'\n'})
 	_, _ = h.Write([]byte(strconv.FormatInt(exp, 10)))

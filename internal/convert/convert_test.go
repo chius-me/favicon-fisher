@@ -96,3 +96,30 @@ func TestConvertRejectsUnsupportedFormat(t *testing.T) {
 		t.Fatal("expected unsupported format error for webp")
 	}
 }
+
+func TestSniffFormatMagicBytes(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if got := SniffFormat(buf.Bytes()); got != "png" {
+		t.Fatalf("expected png, got %q", got)
+	}
+	if got := SniffFormat([]byte{0xff, 0xd8, 0xff, 0xe0}); got != "jpg" {
+		t.Fatalf("expected jpg, got %q", got)
+	}
+	if got := SniffFormat([]byte("GIF89a......")); got != "gif" {
+		t.Fatalf("expected gif, got %q", got)
+	}
+	if got := SniffFormat([]byte("not an image")); got != "" {
+		t.Fatalf("expected empty, got %q", got)
+	}
+}
+
+func TestConvertRejectsNonImageBytes(t *testing.T) {
+	_, err := Convert([]byte("hello world"), "application/octet-stream", "icon.png", "png")
+	if err == nil {
+		t.Fatal("expected error for non-image payload")
+	}
+}

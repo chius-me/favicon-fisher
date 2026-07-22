@@ -1,6 +1,7 @@
 package fetcher
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -206,5 +207,82 @@ func TestDiscoverFromHTMLReturnsManifestOnce(t *testing.T) {
 	}
 	if len(result.Candidates) < 2 {
 		t.Fatalf("expected icon + fallback, got %d", len(result.Candidates))
+	}
+}
+
+func TestDiscoveryGoldenContractJSON(t *testing.T) {
+	// Language-agnostic fixture: shared with Worker parity tests under testdata/golden/.
+	type contract struct {
+		PageURL       string            `json:"page_url"`
+		HTMLFile      string            `json:"html_file"`
+		ManifestHref  string            `json:"manifest_href"`
+		ExpectedURLs  []string          `json:"expected_urls"`
+		ExpectedRels  map[string]string `json:"expected_rels"`
+		BestURL       string            `json:"best_url"`
+	}
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "golden", "discovery.json"))
+	if err != nil {
+		t.Fatalf("read contract: %v", err)
+	}
+	var c contract
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("parse contract: %v", err)
+	}
+	html, err := os.ReadFile(filepath.Join("..", "..", "testdata", "golden", c.HTMLFile))
+	if err != nil {
+		t.Fatalf("read html: %v", err)
+	}
+	result, err := DiscoverFromHTML(c.PageURL, strings.NewReader(string(html)))
+	if err != nil {
+		t.Fatalf("DiscoverFromHTML: %v", err)
+	}
+	if result.ManifestHref != c.ManifestHref {
+		t.Fatalf("manifest href: want %q got %q", c.ManifestHref, result.ManifestHref)
+	}
+	found := map[string]Candidate{}
+	for _, cand := range result.Candidates {
+		found[cand.URL] = cand
+	}
+	for _, wantURL := range c.ExpectedURLs {
+		cand, ok := found[wantURL]
+		if !ok {
+			t.Errorf("missing candidate %s", wantURL)
+			continue
+		}
+		if wantRel := c.ExpectedRels[wantURL]; wantRel != "" && cand.Rel != wantRel {
+			t.Errorf("rel for %s: want %q got %q", wantURL, wantRel, cand.Rel)
+		}
+	}
+	best, err := BestCandidate(result.Candidates)
+	if err != nil {
+		t.Fatalf("BestCandidate: %v", err)
+	}
+	if best.URL != c.BestURL {
+		t.Fatalf("best: want %q got %q", c.BestURL, best.URL)
+	}
+}
+
+func TestDiscoverUnquotedAttributes(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "golden", "unquoted.html"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	candidates, err := DiscoverCandidates("https://example.com/", strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatalf("DiscoverCandidates: %v", err)
+	}
+	want := map[string]bool{
+		"https://example.com/favicon.ico":     false,
+		"https://example.com/apple-touch.png": false,
+	}
+	for _, c := range candidates {
+		if _, ok := want[c.URL]; ok {
+			want[c.URL] = true
+		}
+	}
+	for u, ok := range want {
+		if !ok {
+			t.Errorf("missing unquoted candidate %s", u)
+		}
 	}
 }

@@ -92,6 +92,8 @@ npx wrangler deploy
 - 图标预览一律走同源签名 `/api/proxy`，浏览器不会直接加载远端（或内网）图标 URL。  
 - Go 的 SSRF 在拨号时复验 DNS；Worker 拦截私网 IP 字面量/主机名，并依赖 Cloudflare 出口限制（与 Go 拨号器并非完全等价）。  
 - SVG（以及 Go Web UI 的 ICO）仅在内容确实匹配格式时直通，不会仅信任扩展名。  
+- 反向代理后请设置 `FVF_TRUSTED_PROXIES`，否则限流可能变成「全站共享」。  
+- 安全策略：[SECURITY.md](./SECURITY.md)。部署说明：[docs/](./docs/)。  
 - 更多细节：`./fvf --help`，以及源码目录 `cmd/`、`internal/`、`worker/`。
 
 ## 许可证
