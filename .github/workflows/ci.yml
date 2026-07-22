@@ -41,7 +41,7 @@ jobs:
           go build ./cmd/fvf-web
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@08d09a53f0f5d694f253bd25732e4429c9e9337f # v3
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           category: "/language:go"
 
@@ -62,6 +62,6 @@ jobs:
           build-mode: none
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@08d09a53f0f5d694f253bd25732e4429c9e9337f # v3
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           category: "/language:javascript-typescript"
