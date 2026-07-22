@@ -1,6 +1,7 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.2 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.5 AS builder
 ARG TARGETOS
 ARG TARGETARCH
+ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
