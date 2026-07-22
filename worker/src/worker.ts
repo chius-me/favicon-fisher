@@ -12,29 +12,73 @@ import { handleProxy } from './routes/proxy';
 import type { Env } from './types';
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+    const started = Date.now();
     const url = new URL(request.url);
+    const requestId = request.headers.get('X-Request-ID') || crypto.randomUUID().slice(0, 16);
 
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: securityHeaders(request) });
+      return new Response(null, {
+        status: 204,
+        headers: { ...securityHeaders(request), 'X-Request-ID': requestId },
+      });
     }
 
     if (url.pathname.startsWith('/api/')) {
       const ip = request.headers.get('cf-connecting-ip') || 'unknown';
       if (!allowRate(ip)) {
-        return jsonError('rate limit exceeded', 429, request);
+        return withRequestId(jsonError('rate limit exceeded', 429, request), requestId);
       }
     }
 
-    if (url.pathname === '/api/preview' && request.method === 'POST') {
-      return withSecurityHeaders(request, await handlePreview(request, env));
+    let response: Response;
+    try {
+      if (url.pathname === '/api/preview' && request.method === 'POST') {
+        response = withSecurityHeaders(request, await handlePreview(request, env));
+      } else if (url.pathname === '/api/proxy' && request.method === 'GET') {
+        response = withSecurityHeaders(request, await handleProxy(url, env));
+      } else {
+        const assetResp = await env.ASSETS.fetch(request);
+        response = withSecurityHeaders(request, assetResp);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'request failed';
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          request_id: requestId,
+          path: url.pathname,
+          error: message,
+        })
+      );
+      response = jsonError('request failed', 502, request);
     }
 
-    if (url.pathname === '/api/proxy' && request.method === 'GET') {
-      return withSecurityHeaders(request, await handleProxy(url, env));
+    response = withRequestId(response, requestId);
+
+    if (url.pathname.startsWith('/api/') || response.status >= 400) {
+      console.log(
+        JSON.stringify({
+          level: response.status >= 500 ? 'error' : response.status >= 400 ? 'warn' : 'info',
+          request_id: requestId,
+          method: request.method,
+          path: url.pathname,
+          status: response.status,
+          duration_ms: Date.now() - started,
+        })
+      );
     }
 
-    const assetResp = await env.ASSETS.fetch(request);
-    return withSecurityHeaders(request, assetResp);
+    return response;
   },
 } satisfies ExportedHandler<Env>;
+
+function withRequestId(resp: Response, requestId: string): Response {
+  const headers = new Headers(resp.headers);
+  headers.set('X-Request-ID', requestId);
+  return new Response(resp.body, {
+    status: resp.status,
+    statusText: resp.statusText,
+    headers,
+  });
+}

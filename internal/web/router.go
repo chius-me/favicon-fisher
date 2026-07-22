@@ -25,5 +25,7 @@ func NewMuxWithLimiter(handler *Handler, staticFS http.FileSystem, limiter *secu
 	if limiter != nil {
 		h = limiter.Middleware(h)
 	}
+	// Outermost: request ID + structured access logs for /api and errors.
+	h = security.Observability(h)
 	return h
 }

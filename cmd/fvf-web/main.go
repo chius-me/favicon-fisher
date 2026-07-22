@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -11,6 +11,8 @@ import (
 )
 
 func main() {
+	security.SetupJSONLogger()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -20,7 +22,7 @@ func main() {
 	// Opt-in for trusted private networks only (never enable on the public internet).
 	if os.Getenv("FVF_ALLOW_PRIVATE") == "1" {
 		policy = security.CLIPolicy
-		log.Printf("warning: FVF_ALLOW_PRIVATE=1 — private/loopback fetches are allowed")
+		slog.Warn("FVF_ALLOW_PRIVATE=1 — private/loopback fetches are allowed")
 	}
 
 	client := security.SafeHTTPClient(security.ClientOptions{
@@ -28,7 +30,7 @@ func main() {
 		Policy:  policy,
 	})
 	if os.Getenv(security.EnvSigningSecret) == "" {
-		log.Printf("warning: %s not set; using ephemeral secret (download tokens invalid after restart)", security.EnvSigningSecret)
+		slog.Warn("signing secret not set; using ephemeral secret", "env", security.EnvSigningSecret)
 	}
 	signer := security.NewSigner(os.Getenv(security.EnvSigningSecret), security.DefaultTokenTTL)
 	handler := web.NewHandlerWithOptions(web.HandlerOptions{
@@ -41,7 +43,7 @@ func main() {
 	mux := web.NewMuxWithLimiter(handler, web.StaticFS(), limiter)
 
 	if proxies := os.Getenv(security.EnvTrustedProxies); proxies != "" {
-		log.Printf("trusted proxies for client IP: %s", proxies)
+		slog.Info("trusted proxies for client IP", "proxies", proxies)
 	}
 
 	server := &http.Server{
@@ -53,8 +55,9 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	log.Printf("fvf-web listening on :%s", port)
+	slog.Info("fvf-web listening", "addr", ":"+port)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
 	}
 }

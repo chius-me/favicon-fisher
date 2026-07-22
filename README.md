@@ -93,7 +93,8 @@ npx wrangler deploy
 - Go SSRF checks DNS at dial time; Worker SSRF blocks private IP literals / hostnames and relies on Cloudflare’s egress limits (not full DNS rebinding parity).  
 - SVG (and ICO in the Go Web UI) are passthrough only when the payload matches the format (not just the file extension).  
 - Behind a reverse proxy, set `FVF_TRUSTED_PROXIES` so rate limits use real client IPs.  
-- Security policy: [SECURITY.md](./SECURITY.md). API / deploy: [docs/](./docs/).  
+- Security policy: [SECURITY.md](./SECURITY.md). API / deploy / architecture: [docs/](./docs/).  
+- Contributing & CI gates: [CONTRIBUTING.md](./CONTRIBUTING.md).  
 - More detail: `./fvf --help`, source under `cmd/` / `internal/` / `worker/`.
 
 ## License

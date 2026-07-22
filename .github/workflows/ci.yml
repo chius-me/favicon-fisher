@@ -6,62 +6,29 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
-  test-go:
+  verify:
+    uses: ./.github/workflows/verify.yml
+
+  codeql:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
       - name: Check out code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@08d09a53f0f5d694f253bd25732e4429c9e9337f # v3
         with:
-          go-version-file: go.mod
-          cache: true
+          languages: go, javascript
+          build-mode: none
 
-      - name: Vet
-        run: go vet ./...
-
-      - name: Run test suite
-        run: go test ./...
-
-      - name: Race detector
-        run: go test -race ./...
-
-      - name: Fuzz smoke (short)
-        run: |
-          go test ./internal/fetcher -run=^$ -fuzz=FuzzNormalizeInputURL -fuzztime=5s
-          go test ./internal/security -run=^$ -fuzz=FuzzSignerRoundTrip -fuzztime=5s
-          go test ./internal/convert -run=^$ -fuzz=FuzzSniffFormat -fuzztime=5s
-
-      - name: govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
-
-      - name: Sync check Go web static JS
-        run: |
-          npm install --no-save typescript@5.9.3
-          npx tsc -p internal/web/static/tsconfig.json
-          git diff --exit-code -- internal/web/static/app.js
-
-  check-worker:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: worker
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: worker/package-lock.json
-
-      - run: npm ci
-      - run: npm run check
-      - run: npm run build
-      - run: npm run test:golden
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@08d09a53f0f5d694f253bd25732e4429c9e9337f # v3

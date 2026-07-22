@@ -1,0 +1,99 @@
+# Reusable verification gate — required by CI, Release, Container, Deploy.
+name: verify
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test-go:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run test suite
+        run: go test ./...
+
+      - name: Race detector
+        run: go test -race ./...
+
+      - name: Fuzz smoke (short)
+        run: |
+          go test ./internal/fetcher -run=^$ -fuzz=FuzzNormalizeInputURL -fuzztime=5s
+          go test ./internal/security -run=^$ -fuzz=FuzzSignerRoundTrip -fuzztime=5s
+          go test ./internal/convert -run=^$ -fuzz=FuzzSniffFormat -fuzztime=5s
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Sync check Go web static JS
+        run: |
+          npm install --no-save typescript@5.9.3
+          npx tsc -p internal/web/static/tsconfig.json
+          git diff --exit-code -- internal/web/static/app.js
+
+  check-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - name: Check out code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: npm run test:golden
+      - run: npm test
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: OSV Scanner (Go + npm lockfiles)
+        run: |
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest
+          osv-scanner --lockfile=go.mod --lockfile=worker/package-lock.json
+        continue-on-error: true
+
+      - name: npm audit (production deps)
+        working-directory: worker
+        run: npm ci && npm audit --omit=dev --audit-level=high
+        continue-on-error: true
