@@ -28,6 +28,12 @@ jobs:
       - name: Race detector
         run: go test -race ./...
 
+      - name: Fuzz smoke (short)
+        run: |
+          go test ./internal/fetcher -run=^$ -fuzz=FuzzNormalizeInputURL -fuzztime=5s
+          go test ./internal/security -run=^$ -fuzz=FuzzSignerRoundTrip -fuzztime=5s
+          go test ./internal/convert -run=^$ -fuzz=FuzzSniffFormat -fuzztime=5s
+
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest

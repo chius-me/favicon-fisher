@@ -206,15 +206,19 @@ func TestPreviewFiltersNonImageCandidates(t *testing.T) {
 		switch r.URL.Path {
 		case "/":
 			w.Header().Set("Content-Type", "text/html")
-			// Private-looking and non-image candidates should not all become previewable.
+			// Non-image and extensionless non-image should not all become previewable.
+			// Avoid real private-IP probes here (they hang under AllowPrivate test clients).
 			_, _ = w.Write([]byte(`<html><head>
 				<link rel="icon" href="/ok.png" type="image/png">
-				<link rel="icon" href="http://192.168.1.1/router">
+				<link rel="icon" href="/no-ext" type="text/html">
 				<link rel="icon" href="/page.html" type="text/html">
 			</head></html>`))
 		case "/ok.png":
 			w.Header().Set("Content-Type", "image/png")
 			_, _ = w.Write([]byte("png"))
+		case "/no-ext":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte("<html></html>"))
 		default:
 			http.NotFound(w, r)
 		}
@@ -233,11 +237,28 @@ func TestPreviewFiltersNonImageCandidates(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 	for _, icon := range resp.Icons {
-		if strings.Contains(icon.IconURL, "192.168") {
-			t.Fatalf("private icon URL should be filtered: %s", icon.IconURL)
+		if strings.HasSuffix(icon.IconURL, ".html") || strings.HasSuffix(icon.IconURL, "/no-ext") {
+			t.Fatalf("non-image candidate should be filtered: %s", icon.IconURL)
 		}
-		if strings.HasSuffix(icon.IconURL, ".html") {
-			t.Fatalf("html candidate should be filtered: %s", icon.IconURL)
+		if strings.Contains(icon.ContentType, "text/html") {
+			t.Fatalf("html content-type should not be listed: %s", icon.IconURL)
 		}
+	}
+	foundOK := false
+	for _, icon := range resp.Icons {
+		if strings.HasSuffix(icon.IconURL, "/ok.png") {
+			foundOK = true
+		}
+	}
+	if !foundOK {
+		t.Fatal("expected /ok.png to remain as a candidate")
+	}
+}
+
+func TestAllowedTypesRejectsPrivateLookingExtensionlessURL(t *testing.T) {
+	// Pure unit check: extensionless private-looking URLs must not get formats
+	// without a successful image content-type probe.
+	if got := allowedTypesFor("http://192.168.1.1/admin", ""); len(got) != 0 {
+		t.Fatalf("expected empty allowed types, got %v", got)
 	}
 }
