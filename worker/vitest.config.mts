@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       main: './src/worker.ts',
-      wrangler: { configPath: './wrangler.toml' },
+      wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
         bindings: {
           FVF_SIGNING_SECRET: 'test-signing-secret-at-least-32-chars!!',

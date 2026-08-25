@@ -44,4 +44,26 @@ describe('worker fetch handler', () => {
     await waitOnExecutionContext(ctx);
     expect(response.status).toBe(403);
   });
+
+  it('serves home HTML with a favicon link through the worker', async () => {
+    const request = new Request('https://example.com/');
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, env as Env, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toMatch(/rel=["']icon["']/);
+    expect(html).toContain('/favicon.svg');
+  });
+
+  it('serves favicon.svg as SVG', async () => {
+    const request = new Request('https://example.com/favicon.svg');
+    const ctx = createExecutionContext();
+    const response = await worker.fetch(request, env as Env, ctx);
+    await waitOnExecutionContext(ctx);
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body.length).toBeGreaterThan(0);
+    expect(body).toContain('<svg');
+  });
 });
