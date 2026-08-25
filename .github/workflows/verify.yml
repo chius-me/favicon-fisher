@@ -31,9 +31,18 @@ jobs:
 
       - name: Fuzz smoke (short)
         run: |
-          go test ./internal/fetcher -run=^$ -fuzz=FuzzNormalizeInputURL -fuzztime=5s
-          go test ./internal/security -run=^$ -fuzz=FuzzSignerRoundTrip -fuzztime=5s
-          go test ./internal/convert -run=^$ -fuzz=FuzzSniffFormat -fuzztime=5s
+          set -euo pipefail
+          # The fuzzer can FAIL with "context deadline exceeded" when workers
+          # do not drain in the last milliseconds of -fuzztime. Skip minimize
+          # and retry once so a shutdown race does not fail the gate.
+          fuzz() {
+            local pkg="$1" target="$2"
+            local args=("$pkg" -run='^$' -fuzz="$target" -fuzztime=5s -fuzzminimizetime=0 -timeout=1m)
+            go test "${args[@]}" || go test "${args[@]}"
+          }
+          fuzz ./internal/fetcher FuzzNormalizeInputURL
+          fuzz ./internal/security FuzzSignerRoundTrip
+          fuzz ./internal/convert FuzzSniffFormat
 
       - name: govulncheck
         run: |

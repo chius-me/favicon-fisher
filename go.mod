@@ -1,6 +1,6 @@
 module github.com/chius-me/favicon-fisher
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/pterm/pterm v0.12.83
