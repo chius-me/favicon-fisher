@@ -41,7 +41,15 @@ updates:
     labels:
       - dependencies
       - javascript
+    # Vitest 5+ is blocked by @cloudflare/vitest-plugin peer (vitest@^4.1.0).
+    ignore:
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
     groups:
+      # Patches/minors together. Majors stay solo so TS 7 is not bundled with Vitest 5.
       worker-dev:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
