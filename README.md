@@ -27,7 +27,7 @@ It looks at common sources: `<link rel="icon">`, apple-touch icons, mask icons, 
 |---|---|---|
 | **CLI** (`fvf`) | Terminal / scripts | Fastest path for power users |
 | **Web UI** (`fvf-web`) | Browser on your machine or Docker | Preview candidates, pick format, download |
-| **Worker** | Cloudflare edge | Same idea, zero server to maintain |
+| **Worker** | [icon.chius.dev](https://icon.chius.dev) | Same idea, zero server to maintain |
 
 ## Get started
 
@@ -62,6 +62,8 @@ docker compose up --build
 Published images: `ghcr.io/chius-me/favicon-fisher:latest` (also `:vX.Y.Z`).
 
 ### Cloudflare Worker
+
+Live: **https://icon.chius.dev**
 
 ```bash
 cd worker

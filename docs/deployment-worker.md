@@ -1,5 +1,7 @@
 # Deploying Cloudflare Worker
 
+Production: **https://icon.chius.dev** (`wrangler.jsonc` binds that custom domain).
+
 ```bash
 cd worker
 npm install

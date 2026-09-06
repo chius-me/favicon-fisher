@@ -6,6 +6,8 @@
 
 [favicon-fisher](../README.zh.md) 的 Cloudflare Workers 版本 —— 同一产品，边缘托管 UI，格式转换在浏览器完成。
 
+线上：**https://icon.chius.dev**
+
 ```bash
 npm install
 npx wrangler secret put FVF_SIGNING_SECRET   # 生产环境设置一次

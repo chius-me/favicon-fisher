@@ -27,7 +27,7 @@
 |---|---|---|
 | **CLI**（`fvf`） | 终端 / 脚本 | 最适合命令行与自动化 |
 | **Web UI**（`fvf-web`） | 本机浏览器或 Docker | 预览候选、选格式、下载 |
-| **Worker** | Cloudflare 边缘 | 同样能力，几乎零运维 |
+| **Worker** | [icon.chius.dev](https://icon.chius.dev) | 同样能力，几乎零运维 |
 
 ## 快速开始
 
@@ -62,6 +62,8 @@ docker compose up --build
 镜像：`ghcr.io/chius-me/favicon-fisher:latest`（亦有 `:vX.Y.Z`）。
 
 ### Cloudflare Worker
+
+线上：**https://icon.chius.dev**
 
 ```bash
 cd worker

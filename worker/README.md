@@ -6,6 +6,8 @@
 
 Cloudflare Workers build of [favicon-fisher](../README.md) — same product, edge-hosted UI, browser-side format conversion.
 
+Live: **https://icon.chius.dev**
+
 ```bash
 npm install
 npx wrangler secret put FVF_SIGNING_SECRET   # once, for production

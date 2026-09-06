@@ -9,6 +9,13 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	"workers_dev": true,
+	"routes": [
+		{
+			"pattern": "icon.chius.dev",
+			"custom_domain": true
+		}
+	],
 	"observability": {
 		"enabled": true,
 		"logs": {
