@@ -9,7 +9,13 @@ updates:
     open-pull-requests-limit: 2
     labels:
       - dependencies
-      - github-actions
+      - github_actions
+    groups:
+      # init/analyze must move together; mixed majors fail with
+      # "Loaded a configuration file for version 'X', but running version 'Y'".
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"
 
   - package-ecosystem: gomod
     directory: /
@@ -29,4 +35,4 @@ updates:
     open-pull-requests-limit: 2
     labels:
       - dependencies
-      - npm
+      - javascript
