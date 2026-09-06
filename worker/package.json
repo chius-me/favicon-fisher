@@ -16,7 +16,7 @@
     "@types/node": "^26.4.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",
-    "wrangler": "^4.127.1"
+    "wrangler": "^4.128.0"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
