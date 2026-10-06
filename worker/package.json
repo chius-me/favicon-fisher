@@ -18,6 +18,9 @@
     "vitest": "^4.1.11",
     "wrangler": "^4.136.2"
   },
+  "overrides": {
+    "undici": "7.29.1"
+  },
   "allowScripts": {
     "esbuild@0.28.1": true,
     "workerd@1.20260903.1": true
