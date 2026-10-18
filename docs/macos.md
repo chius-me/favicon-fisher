@@ -38,7 +38,10 @@ Swift tests cover protocol integration with the real helper, cache path validati
 - Universal 2 app and helper built at version 1.6.0; strict nested ad-hoc signature verification passed. Bundle size is approximately 18 MiB.
 - Go unit tests, race detector and vet passed. Swift/helper tests: 5 passed, including process cancellation. Worker checks/build/golden and 29 tests passed.
 - Live GitHub discovery returned 15 candidates. With the explicit Fake-IP option required by this machine's TUN DNS, both original SVG export and a 512×512 PNG source exported as PNG/JPEG succeeded.
-- Native UI automation timed out before returning window state. Menu-bar opening, actual clipboard/save/drag actions, login-item registration and visual layout have not been manually accepted. These are implemented but still require UI QA.
+- Published v1.6.0 from GitHub Releases and updated the existing local `homebrew-tap` clone. The release workflow, tap Linux/macOS CI, Homebrew style and strict online audit passed. The downloaded Universal DMG matched SHA-256 `224a117bdc70de22bdfa190e9842afa418ea1c87e6bfa7fee0e28451b7252e1d`.
+- Homebrew installation and a subsequent reinstall succeeded. The first installation's app bundle later disappeared for an undetermined reason; reinstall restored it, and it remained present at the final check. The installed app and helper passed strict signature verification and contained both architectures; the normal quarantine attribute was retained.
+- Verified the running process came from `/Applications/Favicon Fisher.app`. Its installed helper reported 1.6.0, discovered 15 GitHub candidates, fetched a 512×512 PNG and exported original/PNG/JPEG files successfully using explicit Fake-IP compatibility for this machine's TUN DNS.
+- Native UI inspection returned the installed app's URL-entry panel and its settings window showing version 1.6.0. Subsequent UI actions timed out. Actual clipboard/save/drag actions, login-item registration and full visual acceptance still require UI QA.
 - Free distribution uses ad-hoc signing. Apple notarization is optional and has not been performed.
 
 ## Engine protocol v1
