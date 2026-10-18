@@ -13,7 +13,7 @@ export async function assertSafeUrl(raw: string, allowPrivate: boolean): Promise
   if (u.username || u.password) {
     throw new Error('URLs with userinfo are not allowed');
   }
-  const host = u.hostname.toLowerCase();
+  const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (!host) throw new Error('invalid URL host');
 
   if (allowPrivate) return;
@@ -56,14 +56,30 @@ function isBlockedIPLiteral(host: string): boolean {
     if (a[0] >= 224) return true;
     return false;
   }
-  const h = host.toLowerCase();
-  if (h === '::1' || h === '0:0:0:0:0:0:0:1') return true;
-  if (h.startsWith('fc') || h.startsWith('fd')) return true;
-  if (h.startsWith('fe80')) return true;
-  if (h.startsWith('::ffff:')) {
-    const v4 = h.slice('::ffff:'.length);
-    return isBlockedIPLiteral(v4);
+  // WHATWG URL normalizes IPv6, including dotted IPv4 mappings, to hex groups.
+  const halves = host.toLowerCase().split('::');
+  if (halves.length > 2) return true;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const words = halves.length === 2
+    ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right]
+    : left;
+  if (words.length !== 8 || words.some(w => !/^[0-9a-f]{1,4}$/.test(w))) return true;
+  const parts = words.map(w => Number.parseInt(w, 16));
+  if (parts.slice(0, 5).every(w => w === 0) && parts[5] === 0xffff) {
+    return isBlockedIPLiteral(`${parts[6] >> 8}.${parts[6] & 255}.${parts[7] >> 8}.${parts[7] & 255}`);
   }
+  const value = parts.reduce((n, w) => (n << 16n) | BigInt(w), 0n);
+  const inPrefix = (base: bigint, bits: number) =>
+    (value >> BigInt(128 - bits)) === (base >> BigInt(128 - bits));
+  // Unspecified, loopback, deprecated IPv4-compatible, local, multicast, docs.
+  if (inPrefix(0n, 96)) return true;
+  if (inPrefix(0xfc00n << 112n, 7)) return true;
+  if (inPrefix(0xfe80n << 112n, 10)) return true;
+  if (inPrefix(0xfec0n << 112n, 10)) return true;
+  if (inPrefix(0xff00n << 112n, 8)) return true;
+  if (inPrefix(0x20010db8n << 96n, 32)) return true;
+
   return false;
 }
 

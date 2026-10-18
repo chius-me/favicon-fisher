@@ -20,6 +20,9 @@ type Policy struct {
 	// AllowPrivate permits loopback/private/link-local destinations (CLI / tests).
 	// Web and Worker deployments must keep this false.
 	AllowPrivate bool
+	// AllowFakeIP is a desktop opt-in for a trusted local TUN DNS mapper.
+	// It only permits benchmarking addresses (198.18.0.0/15), never RFC1918 or loopback.
+	AllowFakeIP bool
 }
 
 // DefaultPolicy rejects private addresses (safe for public web services).
@@ -36,6 +39,14 @@ func ValidateFetchURL(raw string) (*url.URL, error) {
 
 // ValidateFetchURLWithPolicy is like ValidateFetchURL with an explicit policy.
 func ValidateFetchURLWithPolicy(raw string, policy Policy) (*url.URL, error) {
+	return ValidateFetchURLWithContext(context.Background(), raw, policy)
+}
+
+// ValidateFetchURLWithContext makes DNS validation cancellable with the operation.
+func ValidateFetchURLWithContext(ctx context.Context, raw string, policy Policy) (*url.URL, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return nil, errors.New("URL is required")
@@ -65,14 +76,14 @@ func ValidateFetchURLWithPolicy(raw string, policy Policy) (*url.URL, error) {
 	}
 
 	if ip, err := netip.ParseAddr(host); err == nil {
-		if IsBlockedIP(ip) {
+		if policy.blocksIP(ip) {
 			return nil, fmt.Errorf("requests to private or reserved addresses are not allowed")
 		}
 		return parsed, nil
 	}
 
 	// Resolve hostname and reject if any address is blocked.
-	ips, err := net.DefaultResolver.LookupIPAddr(context.Background(), host)
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, fmt.Errorf("resolve host: %w", err)
 	}
@@ -84,12 +95,23 @@ func ValidateFetchURLWithPolicy(raw string, policy Policy) (*url.URL, error) {
 		if !ok {
 			return nil, fmt.Errorf("invalid resolved address")
 		}
-		if IsBlockedIP(addr.Unmap()) {
+		if policy.blocksIP(addr.Unmap()) {
 			return nil, fmt.Errorf("requests to private or reserved addresses are not allowed")
 		}
 	}
 
 	return parsed, nil
+}
+
+func (p Policy) blocksIP(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	if p.AllowFakeIP && ip.Is4() {
+		b := ip.As4()
+		if b[0] == 198 && (b[1] == 18 || b[1] == 19) {
+			return false
+		}
+	}
+	return IsBlockedIP(ip)
 }
 
 // IsBlockedIP reports whether ip is loopback, private, link-local, or otherwise non-public.
@@ -162,7 +184,7 @@ func SafeTransport(base *http.Transport, policy Policy) *http.Transport {
 		}
 
 		if ip, err := netip.ParseAddr(host); err == nil {
-			if !policy.AllowPrivate && IsBlockedIP(ip) {
+			if !policy.AllowPrivate && policy.blocksIP(ip) {
 				return nil, fmt.Errorf("blocked address")
 			}
 			return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
@@ -179,7 +201,7 @@ func SafeTransport(base *http.Transport, policy Policy) *http.Transport {
 				continue
 			}
 			unmapped := addrIP.Unmap()
-			if !policy.AllowPrivate && IsBlockedIP(unmapped) {
+			if !policy.AllowPrivate && policy.blocksIP(unmapped) {
 				if firstErr == nil {
 					firstErr = fmt.Errorf("blocked address")
 				}
@@ -218,10 +240,10 @@ func SafeHTTPClient(opts ClientOptions) *http.Client {
 		Timeout:   opts.Timeout,
 		Transport: &userAgentTransport{base: transport, ua: DefaultUserAgent},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
+			if len(via) >= MaxRedirectHops {
 				return errors.New("too many redirects")
 			}
-			if _, err := ValidateFetchURLWithPolicy(req.URL.String(), policy); err != nil {
+			if _, err := ValidateFetchURLWithContext(req.Context(), req.URL.String(), policy); err != nil {
 				return fmt.Errorf("redirect blocked: %w", err)
 			}
 			return nil
@@ -249,7 +271,7 @@ func NewRequest(ctx context.Context, method, rawURL string) (*http.Request, erro
 
 // NewRequestWithPolicy builds a request after SSRF validation with an explicit policy.
 func NewRequestWithPolicy(ctx context.Context, method, rawURL string, policy Policy) (*http.Request, error) {
-	if _, err := ValidateFetchURLWithPolicy(rawURL, policy); err != nil {
+	if _, err := ValidateFetchURLWithContext(ctx, rawURL, policy); err != nil {
 		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, nil)

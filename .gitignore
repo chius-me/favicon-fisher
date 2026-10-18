@@ -4,6 +4,9 @@
 /dist/
 /fvf
 /fvf-web
+/fvf-engine
+macos/.build/
+macos/.swiftpm/
 worker/node_modules/
 worker/.wrangler/
 worker/public/app.js
@@ -11,3 +14,6 @@ worker/.dev.vars
 .env
 .env.*
 !.env.example
+
+.DS_Store
+scripts/tests/__pycache__/

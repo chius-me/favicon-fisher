@@ -5,7 +5,7 @@
 <h1 align="center">favicon-fisher</h1>
 
 <p align="center">
-  Find the best favicon for any website — CLI, local Web UI, or Cloudflare Worker.
+  Find the best favicon for any website — macOS menu bar, CLI, local Web UI, or Cloudflare Worker.
 </p>
 
 <p align="center">
@@ -28,8 +28,20 @@ It looks at common sources: `<link rel="icon">`, apple-touch icons, mask icons, 
 | **CLI** (`fvf`) | Terminal / scripts | Fastest path for power users |
 | **Web UI** (`fvf-web`) | Browser on your machine or Docker | Preview candidates, pick format, download |
 | **Worker** | [icon.chius.dev](https://icon.chius.dev) | Same idea, zero server to maintain |
+| **macOS menu bar** | Native SwiftUI app, local fetching | Preview, copy, save and drag icons; install with Homebrew Cask |
 
 ## Get started
+
+### macOS menu bar app
+
+Requires macOS 14+:
+
+```bash
+brew install --cask chius-me/tap/favicon-fisher
+open "/Applications/Favicon Fisher.app"
+```
+
+The app bundles its Go engine. Free releases use ad-hoc signing and are not notarized by Apple. If macOS blocks the first launch, review the source and use System Settings → Privacy & Security → Open Anyway for this app. Developer ID signing and notarization are optional. See [macOS builds, local tap updates and distribution](./docs/macos.md).
 
 ### CLI
 

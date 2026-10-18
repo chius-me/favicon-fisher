@@ -15,6 +15,8 @@ import (
 type Fetcher struct {
 	Client *http.Client
 	Policy security.Policy
+	// SkipProbes lets interactive clients validate only the candidates they display.
+	SkipProbes bool
 }
 
 func New(client *http.Client) *Fetcher {
@@ -34,6 +36,8 @@ func NewWithPolicy(client *http.Client, policy security.Policy) *Fetcher {
 }
 
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fetchAll bool) (Result, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	preview, err := f.Preview(ctx, rawURL)
 	if err != nil {
 		return Result{}, err
@@ -104,6 +108,8 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string, outputDir string, fe
 }
 
 func (f *Fetcher) Preview(ctx context.Context, rawURL string) (PreviewResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	normalized, err := NormalizeInputURL(rawURL)
 	if err != nil {
 		return PreviewResult{}, err
@@ -146,6 +152,12 @@ func (f *Fetcher) Preview(ctx context.Context, rawURL string) (PreviewResult, er
 	// Probe content types with a hard cap on network probes.
 	probes := 0
 	for i := range candidates {
+		if f.SkipProbes {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return PreviewResult{}, err
+		}
 		if candidates[i].Type != "" {
 			continue
 		}
@@ -166,6 +178,9 @@ func (f *Fetcher) Preview(ctx context.Context, rawURL string) (PreviewResult, er
 		candidates = RankCandidates(candidates)[:security.MaxTotalCandidates]
 	}
 
+	if err := ctx.Err(); err != nil {
+		return PreviewResult{}, err
+	}
 	best, err := BestCandidate(candidates)
 	if err != nil {
 		return PreviewResult{}, err

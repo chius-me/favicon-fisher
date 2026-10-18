@@ -5,7 +5,7 @@
 <h1 align="center">favicon-fisher</h1>
 
 <p align="center">
-  发现并下载任意网站的最佳 favicon —— 支持 CLI、本地 Web UI 与 Cloudflare Worker。
+  发现并下载任意网站的最佳 favicon —— 支持 macOS 菜单栏、CLI、本地 Web UI 与 Cloudflare Worker。
 </p>
 
 <p align="center">
@@ -28,8 +28,20 @@
 | **CLI**（`fvf`） | 终端 / 脚本 | 最适合命令行与自动化 |
 | **Web UI**（`fvf-web`） | 本机浏览器或 Docker | 预览候选、选格式、下载 |
 | **Worker** | [icon.chius.dev](https://icon.chius.dev) | 同样能力，几乎零运维 |
+| **macOS 菜单栏** | 原生 SwiftUI 应用，本机抓取 | 预览、复制、保存与拖出图标；支持 Homebrew Cask |
 
 ## 快速开始
+
+### macOS 菜单栏应用
+
+需要 macOS 14+：
+
+```bash
+brew install --cask chius-me/tap/favicon-fisher
+open "/Applications/Favicon Fisher.app"
+```
+
+应用内置 Go 引擎，无需单独启动 CLI 或 Web 服务。默认免费发布采用 ad-hoc 签名、未经过 Apple 公证；首次打开如被拦截，可在确认来源后到「系统设置 → 隐私与安全 → 仍要打开」允许此应用。Developer ID 签名与公证是可选项。源码构建、本地 tap 更新和发布流程见 [macOS 文档](./docs/macos.md)。
 
 ### CLI
 

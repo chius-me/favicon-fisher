@@ -8,6 +8,25 @@ permissions:
   contents: read
 
 jobs:
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build desktop helper and test Swift integration
+        run: |
+          go build -o "$RUNNER_TEMP/fvf-engine" ./cmd/fvf-engine
+          FVF_TEST_ENGINE="$RUNNER_TEMP/fvf-engine" swift test --package-path macos
+      - name: Validate release scripts and offline safety checks
+        run: |
+          for script in scripts/*.sh; do bash -n "$script"; done
+          python3 scripts/tests/test_macos_release.py
+      - name: Build Universal app and verify signature
+        run: bash scripts/build-macos.sh 0.1.0
+
   test-go:
     runs-on: ubuntu-latest
     steps:

@@ -84,3 +84,18 @@ func TestLimitedReadAll(t *testing.T) {
 		t.Fatalf("got %q", exact)
 	}
 }
+
+func TestFakeIPOptInDoesNotAllowOtherPrivateAddresses(t *testing.T) {
+	policy := Policy{AllowFakeIP: true}
+	for _, raw := range []string{"198.18.0.1", "198.19.255.254", "::ffff:198.18.0.1"} {
+		ip := netip.MustParseAddr(raw)
+		if !DefaultPolicy.blocksIP(ip) || policy.blocksIP(ip) {
+			t.Fatalf("bad fake-IP handling: %s", raw)
+		}
+	}
+	for _, raw := range []string{"127.0.0.1", "192.168.1.1", "169.254.169.254", "10.0.0.1", "::1", "fd00::1"} {
+		if !policy.blocksIP(netip.MustParseAddr(raw)) {
+			t.Fatalf("private address allowed: %s", raw)
+		}
+	}
+}

@@ -28,6 +28,7 @@ export async function handlePreview(request: Request, env: Env): Promise<Respons
       return jsonError('url is required', 400, request);
     }
 
+    const secret = await signingKey(env);
     const allowPrivate = env.FVF_ALLOW_PRIVATE === '1';
     const normalized = normalizeUrl(inputUrl);
     await assertSafeUrl(normalized, allowPrivate);
@@ -85,8 +86,7 @@ export async function handlePreview(request: Request, env: Env): Promise<Respons
 
     await enrichCandidates(candidates, allowPrivate);
 
-    const secret = await signingKey(env);
-    const recommended = candidates[0] || null;
+
     const icons = [];
     for (const c of candidates) {
       const allowed = getAllowedTypes(c.url, c.type);
@@ -105,7 +105,7 @@ export async function handlePreview(request: Request, env: Env): Promise<Respons
       {
         input_url: inputUrl,
         page_url: pageUrl,
-        recommended_icon_url: recommended?.url || null,
+        recommended_icon_url: icons[0]?.icon_url || null,
         icons,
       },
       200,

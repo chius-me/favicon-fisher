@@ -1,7 +1,11 @@
 package fetcher
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,7 +17,7 @@ import (
 func TestDownloadIconSavesPNGAndReturnsMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("png-bytes"))
+		_, _ = w.Write(testPNG())
 	}))
 	defer server.Close()
 
@@ -25,8 +29,8 @@ func TestDownloadIconSavesPNGAndReturnsMetadata(t *testing.T) {
 	if result.ContentType != "image/png" {
 		t.Fatalf("expected image/png, got %q", result.ContentType)
 	}
-	if result.Bytes != int64(len("png-bytes")) {
-		t.Fatalf("expected %d bytes, got %d", len("png-bytes"), result.Bytes)
+	if result.Bytes != int64(len(testPNG())) {
+		t.Fatalf("expected %d bytes, got %d", len(testPNG()), result.Bytes)
 	}
 	if filepath.Ext(result.OutputPath) != ".png" {
 		t.Fatalf("expected .png output path, got %q", result.OutputPath)
@@ -39,7 +43,7 @@ func TestDownloadIconSavesPNGAndReturnsMetadata(t *testing.T) {
 func TestDownloadIconInfersICOExtensionFromContentType(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/x-icon")
-		_, _ = w.Write([]byte("ico-bytes"))
+		_, _ = w.Write(testICO())
 	}))
 	defer server.Close()
 
@@ -79,10 +83,10 @@ func TestFetcherPreviewReturnsBestCandidateAndAllCandidates(t *testing.T) {
 			_, _ = w.Write([]byte(`<html><head><link rel="icon" href="/favicon.png"><link rel="apple-touch-icon" href="/apple.png"></head></html>`))
 		case "/favicon.png":
 			w.Header().Set("Content-Type", "image/png")
-			_, _ = w.Write([]byte("png-bytes"))
+			_, _ = w.Write(testPNG())
 		case "/apple.png":
 			w.Header().Set("Content-Type", "image/png")
-			_, _ = w.Write([]byte("apple-bytes"))
+			_, _ = w.Write(testPNG())
 		default:
 			http.NotFound(w, r)
 		}
@@ -117,7 +121,7 @@ func TestFetcherFetchReturnsDiscoveredIconMetadata(t *testing.T) {
 			_, _ = w.Write([]byte(`<html><head><link rel="icon" href="/favicon.png"></head></html>`))
 		case "/favicon.png":
 			w.Header().Set("Content-Type", "image/png")
-			_, _ = w.Write([]byte("png-bytes"))
+			_, _ = w.Write(testPNG())
 		default:
 			http.NotFound(w, r)
 		}
@@ -160,7 +164,7 @@ func TestFetchFallsBackWhenBestCandidate404(t *testing.T) {
 			http.NotFound(w, r)
 		case "/ok.png":
 			w.Header().Set("Content-Type", "image/png")
-			_, _ = w.Write([]byte("ok-png"))
+			_, _ = w.Write(testPNG())
 		default:
 			http.NotFound(w, r)
 		}
@@ -188,7 +192,7 @@ func TestFetchAllWritesDistinctFiles(t *testing.T) {
 			</head></html>`))
 		case "/a.png", "/b.png":
 			w.Header().Set("Content-Type", "image/png")
-			_, _ = w.Write([]byte("png-" + r.URL.Path))
+			_, _ = w.Write(testPNG())
 		default:
 			http.NotFound(w, r)
 		}
@@ -213,5 +217,42 @@ func TestFetchAllWritesDistinctFiles(t *testing.T) {
 		if _, err := os.Stat(icon.OutputPath); err != nil {
 			t.Fatalf("missing file %s: %v", icon.OutputPath, err)
 		}
+	}
+}
+
+func testPNG() []byte {
+	var b bytes.Buffer
+	_ = png.Encode(&b, image.NewRGBA(image.Rect(0, 0, 2, 2)))
+	return b.Bytes()
+}
+func testICO() []byte {
+	png := testPNG()
+	b := make([]byte, 22)
+	b[2] = 1
+	b[4] = 1
+	b[6] = 2
+	b[7] = 2
+	binary.LittleEndian.PutUint32(b[14:18], uint32(len(png)))
+	binary.LittleEndian.PutUint32(b[18:22], 22)
+	return append(b, png...)
+}
+func TestFetchFallsBackFromHTMLWithSuccessStatus(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			_, _ = w.Write([]byte(`<link rel="icon" href="/fake.png"><link rel="apple-touch-icon" href="/real.png">`))
+		case "/fake.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte("<html>login required</html>"))
+		case "/real.png":
+			_, _ = w.Write(testPNG())
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer s.Close()
+	result, err := New(s.Client()).Fetch(context.Background(), s.URL, t.TempDir(), false)
+	if err != nil || result.IconURL != s.URL+"/real.png" {
+		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }

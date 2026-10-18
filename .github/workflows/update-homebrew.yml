@@ -1,0 +1,88 @@
+name: update-homebrew
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable tag to add to the tap (vMAJOR.MINOR.PATCH)
+        required: true
+        type: string
+      notarized:
+        description: Require Apple notarization (leave off for free ad-hoc releases)
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      notarized:
+        default: false
+        type: boolean
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+# Serialize tap changes; a newer published version must never be downgraded by a retry.
+concurrency:
+  group: homebrew-tap
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check tap credentials
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          test -n "$TAP_TOKEN" || { echo "Configure HOMEBREW_TAP_TOKEN with Contents and Pull requests write access to chius-me/homebrew-tap." >&2; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate published asset and generate Cask
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          SIGNING_MODE: ${{ inputs.notarized && 'notarized' || 'ad-hoc' }}
+        run: bash scripts/prepare-homebrew-cask.sh "$RELEASE_TAG" "$RUNNER_TEMP/fvf-cask" "$SIGNING_MODE"
+      - name: Audit and install the published DMG
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+          NOTARIZED: ${{ inputs.notarized }}
+        run: |
+          brew tap chius-me/tap
+          cp "$RUNNER_TEMP/fvf-cask/favicon-fisher.rb" "$(brew --repository chius-me/tap)/Casks/favicon-fisher.rb"
+          brew style --cask chius-me/tap/favicon-fisher
+          brew audit --cask --strict --online chius-me/tap/favicon-fisher
+          brew install --cask --appdir="$RUNNER_TEMP/fvf-installed" chius-me/tap/favicon-fisher
+          APP="$RUNNER_TEMP/fvf-installed/Favicon Fisher.app"
+          codesign --verify --deep --strict "$APP"
+          if [[ "$NOTARIZED" == true ]]; then
+            xcrun stapler validate "$APP"
+            spctl --assess --type execute --verbose=2 "$APP"
+          fi
+          for binary in "$APP/Contents/MacOS/FaviconFisher" "$APP/Contents/Helpers/fvf-engine"; do
+            architectures=" $(lipo -archs "$binary") "
+            [[ "$architectures" == *" arm64 "* && "$architectures" == *" x86_64 "* ]]
+          done
+      - name: Check out tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: chius-me/homebrew-tap
+          ref: main
+          path: homebrew-tap
+          fetch-depth: 0
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Open or reuse version PR
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: bash scripts/update-homebrew-tap.sh "$RELEASE_TAG" "$RUNNER_TEMP/fvf-cask/favicon-fisher.rb" "$GITHUB_WORKSPACE/homebrew-tap" pr
+      - name: Remove test installation
+        if: always()
+        run: brew uninstall --cask chius-me/tap/favicon-fisher || true

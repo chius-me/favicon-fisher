@@ -29,27 +29,17 @@ func DownloadIconWithPolicy(ctx context.Context, client *http.Client, policy sec
 		})
 	}
 
-	req, err := security.NewRequestWithPolicy(ctx, http.MethodGet, iconURL, policy)
+	data, info, err := ReadIcon(ctx, client, policy, iconURL)
 	if err != nil {
 		return IconResult{}, err
 	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return IconResult{}, fmt.Errorf("download icon: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return IconResult{}, fmt.Errorf("download icon failed: status %d", resp.StatusCode)
-	}
-
+	contentType := map[string]string{"png": "image/png", "jpg": "image/jpeg", "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml", "ico": "image/x-icon"}[info.Format]
 	parsedURL, err := url.Parse(iconURL)
 	if err != nil {
 		return IconResult{}, fmt.Errorf("parse icon URL: %w", err)
 	}
 
-	ext := inferExtension(parsedURL.Path, resp.Header.Get("Content-Type"))
+	ext := "." + info.Format
 	filename := uniqueIconFilename(parsedURL.Hostname(), index, parsedURL.Path, sizeHint, relHint, ext)
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return IconResult{}, fmt.Errorf("create output dir: %w", err)
@@ -77,7 +67,7 @@ func DownloadIconWithPolicy(ctx context.Context, client *http.Client, policy sec
 	}
 	defer file.Close()
 
-	written, err := security.CopyLimited(file, resp.Body, security.MaxIconBody)
+	written, err := file.Write(data)
 	if err != nil {
 		_ = os.Remove(outputPath)
 		return IconResult{}, fmt.Errorf("write output file: %w", err)
@@ -86,9 +76,9 @@ func DownloadIconWithPolicy(ctx context.Context, client *http.Client, policy sec
 	return IconResult{
 		IconURL:     iconURL,
 		OutputPath:  outputPath,
-		ContentType: resp.Header.Get("Content-Type"),
-		Bytes:       written,
-		StatusCode:  resp.StatusCode,
+		ContentType: contentType,
+		Bytes:       int64(written),
+		StatusCode:  http.StatusOK,
 		Filename:    filename,
 		SourceRel:   relHint,
 		Sizes:       sizeHint,
