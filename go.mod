@@ -1,12 +1,12 @@
 module github.com/chius-me/favicon-fisher
 
-go 1.26.6
+go 1.26.9
 
 require (
 	github.com/pterm/pterm v0.12.83
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/image v0.47.0
-	golang.org/x/net v0.58.0
+	golang.org/x/net v0.60.0
 )
 
 require (
@@ -22,6 +22,6 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
+	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )

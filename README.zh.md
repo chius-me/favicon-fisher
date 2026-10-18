@@ -96,7 +96,7 @@ npx wrangler deploy
 
 | 目标 | 需要 |
 |---|---|
-| 构建 CLI 或 Web UI | Go 1.26+ |
+| 构建 CLI 或 Web UI | Go 1.26.9+ |
 | Docker 运行 | Docker Compose v2 |
 | 部署 Worker | Node.js 20+ 与 Wrangler |
 

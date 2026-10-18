@@ -96,7 +96,7 @@ npx wrangler deploy
 
 | You want to… | You need… |
 |---|---|
-| Build CLI or Web UI | Go 1.26+ |
+| Build CLI or Web UI | Go 1.26.9+ |
 | Run with Docker | Docker Compose v2 |
 | Deploy the Worker | Node.js 20+ and Wrangler |
 
