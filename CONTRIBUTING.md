@@ -22,7 +22,7 @@ All of CI, Release, Container, and Deploy call the reusable workflow `.github/wo
 - Go vet / test / race / short fuzz / govulncheck / embedded `app.js` sync  
 - Worker TypeScript check / build / golden / Vitest  
 
-Additional on `main`/PR: CodeQL. Container builds run Trivy (HIGH/CRITICAL) after push.
+Additional on `main`/PR: CodeQL. Container builds run Trivy (HIGH/CRITICAL) before registry publication. Manual container workflow runs on feature branches build and scan without publishing.
 
 ## Conventions
 
