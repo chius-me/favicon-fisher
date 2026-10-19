@@ -117,8 +117,8 @@ jobs:
 
       - name: OSV Scanner (Go + npm lockfiles)
         run: |
-          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@latest
-          osv-scanner --lockfile=go.mod --lockfile=worker/package-lock.json
+          GOTOOLCHAIN=auto go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.0
+          osv-scanner scan source --lockfile=go.mod --lockfile=worker/package-lock.json
         continue-on-error: true
 
       - name: npm audit (production deps)
