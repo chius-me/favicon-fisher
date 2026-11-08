@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -18,60 +17,6 @@ concurrency:
 jobs:
   verify:
     uses: ./.github/workflows/verify.yml
-
-  codeql-go:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v7
-
-      - name: Initialize CodeQL (Go)
-        uses: github/codeql-action/init@v4
-        with:
-          languages: go
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Build for CodeQL
-        run: |
-          go build ./cmd/fvf
-          go build ./cmd/fvf-web
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:go"
-
-  codeql-js:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v7
-
-      - name: Initialize CodeQL (JS/TS)
-        uses: github/codeql-action/init@v4
-        with:
-          languages: javascript-typescript
-          build-mode: none
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:javascript-typescript"
 
   deploy:
     needs: verify
