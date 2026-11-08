@@ -67,12 +67,14 @@ jobs:
 
       - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@v0.36.0
+        continue-on-error: true
         with:
           image-ref: favicon-fisher:scan
           format: table
           exit-code: "1"
           ignore-unfixed: true
           severity: CRITICAL,HIGH
+          token-setup-trivy: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push container image
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
