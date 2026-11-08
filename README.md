@@ -1,19 +1,22 @@
-<p align="right">
-  English | <a href="./README.zh.md">简体中文</a>
-</p>
+<div align="right">
+  <a href="#readme">English</a> | <a href="./README.zh.md">简体中文</a>
+</div>
 
-<h1 align="center">favicon-fisher</h1>
+<div align="center">
 
-<p align="center">
-  Find the best favicon for any website — macOS menu bar, CLI, local Web UI, or Cloudflare Worker.
-</p>
+# favicon-fisher
 
-<p align="center">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg">
-  <img alt="Language" src="https://img.shields.io/badge/Language-Go-00ADD8.svg">
-  <img alt="Releases" src="https://img.shields.io/github/v/release/chius-me/favicon-fisher?color=success">
-  <img alt="CI" src="https://github.com/chius-me/favicon-fisher/actions/workflows/ci.yml/badge.svg">
-</p>
+Find the best favicon for any website — macOS menu bar, CLI, local Web UI, or Cloudflare Worker.
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/chius-me/favicon-fisher?color=2ea44f)](https://github.com/chius-me/favicon-fisher/releases/latest)
+[![CI](https://github.com/chius-me/favicon-fisher/actions/workflows/ci.yml/badge.svg)](https://github.com/chius-me/favicon-fisher/actions)
+[![Docker](https://github.com/chius-me/favicon-fisher/actions/workflows/docker.yml/badge.svg)](https://github.com/chius-me/favicon-fisher/actions)
+![Language Go](https://img.shields.io/badge/Language-Go-00ADD8.svg?logo=go&logoColor=white)
+
+[Worker Demo](https://icon.chius.dev) · [Homebrew Tap](https://github.com/chius-me/homebrew-tap) · [Releases](https://github.com/chius-me/favicon-fisher/releases)
+
+</div>
 
 ## What it is
 
@@ -111,6 +114,12 @@ npx wrangler deploy
 - Contributing & CI gates: [CONTRIBUTING.md](./CONTRIBUTING.md).  
 - More detail: `./fvf --help`, source under `cmd/` / `internal/` / `worker/`.
 
-## License
+## 📄 License
 
-[MIT License](./LICENSE)
+This project is licensed under the [MIT License](LICENSE).
+
+---
+
+<div align="center">
+  <sub>Crafted with ❤️ by <a href="https://chius.cc">Chius</a> · Powered by Cloudflare & GitHub</sub>
+</div>

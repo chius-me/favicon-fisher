@@ -1,19 +1,22 @@
-<p align="right">
+<div align="right">
   <a href="./README.md">English</a> | 简体中文
-</p>
+</div>
 
-<h1 align="center">favicon-fisher</h1>
+<div align="center">
 
-<p align="center">
-  发现并下载任意网站的最佳 favicon —— 支持 macOS 菜单栏、CLI、本地 Web UI 与 Cloudflare Worker。
-</p>
+# favicon-fisher
 
-<p align="center">
-  <img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-blue.svg">
-  <img alt="Language" src="https://img.shields.io/badge/Language-Go-00ADD8.svg">
-  <img alt="Releases" src="https://img.shields.io/github/v/release/chius-me/favicon-fisher?color=success">
-  <img alt="CI" src="https://github.com/chius-me/favicon-fisher/actions/workflows/ci.yml/badge.svg">
-</p>
+发现并下载任意网站的最佳 favicon —— 支持 macOS 菜单栏、CLI、本地 Web UI 与 Cloudflare Worker。
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/chius-me/favicon-fisher?color=2ea44f)](https://github.com/chius-me/favicon-fisher/releases/latest)
+[![CI](https://github.com/chius-me/favicon-fisher/actions/workflows/ci.yml/badge.svg)](https://github.com/chius-me/favicon-fisher/actions)
+[![Docker](https://github.com/chius-me/favicon-fisher/actions/workflows/docker.yml/badge.svg)](https://github.com/chius-me/favicon-fisher/actions)
+![Language Go](https://img.shields.io/badge/Language-Go-00ADD8.svg?logo=go&logoColor=white)
+
+[Worker 演示](https://icon.chius.dev) · [Homebrew Tap](https://github.com/chius-me/homebrew-tap) · [版本发布](https://github.com/chius-me/favicon-fisher/releases)
+
+</div>
 
 ## 是什么
 
@@ -111,6 +114,12 @@ npx wrangler deploy
 - 贡献与 CI 门禁：[CONTRIBUTING.md](./CONTRIBUTING.md)。  
 - 更多细节：`./fvf --help`，以及源码目录 `cmd/`、`internal/`、`worker/`。
 
-## 许可证
+## 📄 许可证
 
-[GNU GPL v3.0](./LICENSE)
+本项目采用 [MIT 许可证](LICENSE) 开源发布。
+
+---
+
+<div align="center">
+  <sub>Crafted with ❤️ by <a href="https://chius.cc">Chius</a> · Powered by Cloudflare & GitHub</sub>
+</div>
